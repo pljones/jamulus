@@ -22,7 +22,7 @@ jobs:
         # CodeQL supports [ 'cpp', 'csharp', 'go', 'java', 'javascript', 'python' ]
         # Learn more:
         # https://docs.github.com/en/free-pro-team@latest/github/finding-security-vulnerabilities-and-errors-in-your-code/configuring-code-scanning#changing-the-languages-that-are-analyzed
-        os: [ 'macos-latest', 'ubuntu-latest', 'windows-latest' ]
+        os: [ 'macos-latest', 'ubuntu-latest', 'windows-latest', 'ubuntu-latest+android' ]
 
     steps:
     - name: Checkout repository
@@ -34,20 +34,23 @@ jobs:
         sudo apt install build-essential qt5-qmake qtdeclarative5-dev qt5-default qttools5-dev-tools libjack-jackd2-dev
       if: matrix.os == 'ubuntu-latest'
 
+    - name: Install Qt on Linux for Android
+      run: |
+        pip install aqt
+        python -m aqt --outputdir Qt install 5.15.2 linux android android_x86_64
+      if: matrix.os == 'ubuntu-latest+android'
+
     - name: Install Qt on MacOS
-      uses: jurplel/install-qt-action@v2
-      with:
-        version: '5.15.2'
-        dir: '${{ github.workspace }}'
+      run: |
+        pip install aqt
+        python -m aqt --outputdir Qt install 5.15.2 mac ios
       if: matrix.os == 'macos-latest'
 
     - name: Install Qt on Windows
-      uses: jurplel/install-qt-action@v2
-      with:
-        version: '5.15.2'
-        dir: '${{ github.workspace }}'
-        arch: 'win64_msvc2019_64'
-        tools: 'tools_qtcreator,4.14.0-0,qt.tools.qtcreator'
+      run: |
+        pip install aqt
+        python -m aqt --outputdir Qt install 5.15.2 windows desktop win64_msvc2019_64
+        python -m aqt --outputdir Qt tool           windows tools_qtcreator 4.14.0-0 qt.tools.qtcreator
       if: matrix.os == 'windows-latest'
 
     - name: Install ASIOSDK
@@ -66,8 +69,9 @@ jobs:
 
     - name: Build elsewhere
       run: |
-        [ -x /Users/runner/work/jamulus/jamulus/Qt/5.15.2/clang_64/bin/qmake ] && \
-          /Users/runner/work/jamulus/jamulus/Qt/5.15.2/clang_64/bin/qmake || qmake
+        [ -x Qt/5.15.2/clang_64/bin/qmake ] \
+          && Qt/5.15.2/clang_64/bin/qmake \
+          || qmake
         make
       if: matrix.os != 'windows-latest'
 
@@ -78,9 +82,9 @@ jobs:
     - name: Build on Windows
       shell: cmd
       run: |
-        D:\a\jamulus\jamulus\Qt\5.15.2\msvc2019_64\bin\qmake.exe Jamulus.pro -spec win32-msvc
-        D:\a\jamulus\jamulus\Qt\Tools\QtCreator\bin\jom.exe qmake_all
-        D:\a\jamulus\jamulus\Qt\Tools\QtCreator\bin\jom.exe
+        Qt\5.15.2\msvc2019_64\bin\qmake.exe Jamulus.pro -spec win32-msvc
+        Qt\Tools\QtCreator\bin\jom.exe qmake_all
+        Qt\Tools\QtCreator\bin\jom.exe
       if: matrix.os == 'windows-latest'
 
     - name: Perform CodeQL Analysis
