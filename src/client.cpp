@@ -61,7 +61,7 @@ CClient::CClient ( const quint16  iPortNumber,
     eGUIDesign                       ( GD_ORIGINAL ),
     bEnableOPUS64                    ( false ),
     bJitterBufferOK                  ( true ),
-    bNuteMeInPersonalMix             ( bNMuteMeInPersonalMix ),
+    bMuteMeInPersonalMix             ( bNMuteMeInPersonalMix ),
     iServerSockBufNumFrames          ( DEF_NET_BUF_SIZE_NUM_BL ),
     pSignalHandler                   ( CSignalHandler::getSingletonP() )
 {
@@ -712,7 +712,7 @@ void CClient::OnClientIDReceived ( int iChanID )
     // for headless mode we support to mute our own signal in the personal mix
     // (note that the check for headless is done in the main.cpp and must not
     // be checked here)
-    if ( bNuteMeInPersonalMix )
+    if ( bMuteMeInPersonalMix )
     {
         SetRemoteChanGain ( iChanID, 0, false );
     }

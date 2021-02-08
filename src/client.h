@@ -354,7 +354,7 @@ protected:
     bool                    bEnableOPUS64;
 
     bool                    bJitterBufferOK;
-    bool                    bNuteMeInPersonalMix;
+    bool                    bMuteMeInPersonalMix;
     QMutex                  MutexDriverReinit;
 
     // server settings
