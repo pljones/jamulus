@@ -37,7 +37,7 @@ jobs:
     - name: Install Qt on MacOS
       uses: jurplel/install-qt-action@v2
       with:
-        version: '5.15.2'
+        version: '5.9.9'
         dir: '${{ github.workspace }}'
       if: matrix.os == 'macos-latest'
 
@@ -65,10 +65,7 @@ jobs:
         languages: ${{ matrix.language }}
 
     - name: Build elsewhere
-      run: |
-        [ -x /Users/runner/work/jamulus/jamulus/Qt/5.15.2/clang_64/bin/qmake ] && \
-          /Users/runner/work/jamulus/jamulus/Qt/5.15.2/clang_64/bin/qmake || qmake
-        make
+      run: qmake && make
       if: matrix.os != 'windows-latest'
 
     - name: Visual Studio shell
