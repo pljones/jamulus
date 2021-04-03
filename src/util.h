@@ -374,23 +374,30 @@ class CBaseDlg : public QDialog
 {
     Q_OBJECT
 
+private:
+    bool disableEscape;
+
 public:
     CBaseDlg ( QWidget*        parent = nullptr,
-               Qt::WindowFlags flags  = Qt::WindowFlags() ) : QDialog ( parent, flags ) {}
+               Qt::WindowFlags flags  = Qt::WindowFlags(),
+               bool            disableEscape = true ) :
+        QDialog       ( parent, flags ),
+        disableEscape ( disableEscape )
+    {}
 
 public slots:
     void keyPressEvent ( QKeyEvent* pEvent )
     {
-        // block escape key
-        if ( pEvent->key() != Qt::Key_Escape )
-        {
 #ifdef ANDROID
-            if ( pEvent->key() == Qt::Key_Back )
-            {
-                close(); // otherwise, dialog does not show properly again in android (nefarius2001, #832)
-                return;
-            }
+        if ( pEvent->key() == Qt::Key_Back )
+        {
+            close(); // otherwise, dialog does not show properly again in android (nefarius2001, #832)
+            return;
+        }
 #endif
+        // block escape key
+        if ( !disableEscape || pEvent->key() != Qt::Key_Escape )
+        {
             QDialog::keyPressEvent ( pEvent );
         }
     }

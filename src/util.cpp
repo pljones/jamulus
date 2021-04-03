@@ -526,11 +526,10 @@ CAboutDlg::CAboutDlg ( QWidget* parent ) : CBaseDlg ( parent )
 
 
 // Licence dialog --------------------------------------------------------------
-CLicenceDlg::CLicenceDlg ( QWidget* parent ) : CBaseDlg ( parent )
+CLicenceDlg::CLicenceDlg ( QWidget* parent ) : CBaseDlg ( parent, Qt::Dialog, false )
 {
 /*
     The licence dialog is structured as follows:
-    - text box with the licence text on the top
     - check box: I &agree to the above licence terms
     - Accept button (disabled if check box not checked)
     - Decline button
@@ -574,7 +573,7 @@ CLicenceDlg::CLicenceDlg ( QWidget* parent ) : CBaseDlg ( parent )
 // Musician profile dialog -----------------------------------------------------
 CMusProfDlg::CMusProfDlg ( CClient* pNCliP,
                            QWidget* parent ) :
-    CBaseDlg ( parent ),
+    CBaseDlg ( parent ), // No min/max, esc disabled
     pClient  ( pNCliP )
 {
 /*
