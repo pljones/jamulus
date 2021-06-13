@@ -93,6 +93,7 @@ QString CServerListEntry::toCSV()
 // --- CServerListManager ---
 CServerListManager::CServerListManager ( const quint16  iNPortNum,
                                          const QString& sNCentServAddr,
+                                         const QString& strServerListFileName,
                                          const QString& strServerInfo,
                                          const QString& strServerListFilter,
                                          const QString& strServerPublicIP,
@@ -143,7 +144,7 @@ CServerListManager::CServerListManager ( const quint16  iNPortNum,
         ThisServerListEntry ( CHostAddress(), SlaveCurLocalHostAddress, "", QLocale::system().country(), "", iNumChannels, bIsCentralServer );
 
     // parse the server info string according to definition:
-    // [this server name];[this server city];[this server country as QLocale ID] (; optional permanent servers ... below)
+    // [this server name];[this server city];[this server country as QLocale ID] (; ... ignored)
     // per definition, we expect at least three parameters
     if ( iServInfoNumSplitItems >= 3 )
     {
@@ -174,10 +175,10 @@ CServerListManager::CServerListManager ( const quint16  iNPortNum,
 
     if ( bIsCentralServer )
     {
-        // Load any persistent server list
-        if ( iServInfoNumSplitItems >= 4 && ServerListFileName.isEmpty() && QFileInfo::exists ( slServInfoSeparateParams[3] ) )
+        // Load any persistent server list (create it if it is not there)
+        if ( !strServerListFileName.isEmpty() && ServerListFileName.isEmpty() )
         {
-            CentralServerLoadServerList ( slServInfoSeparateParams[3] );
+            CentralServerLoadServerList ( strServerListFileName );
         }
 
         // whitelist parsing

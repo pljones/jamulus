@@ -134,6 +134,7 @@ class CServerListManager : public QObject
 public:
     CServerListManager ( const quint16  iNPortNum,
                          const QString& sNCentServAddr,
+                         const QString& strServerListFileName,
                          const QString& strServerInfo,
                          const QString& strServerListFilter,
                          const QString& strServerPublicIP,

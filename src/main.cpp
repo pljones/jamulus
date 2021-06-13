@@ -83,6 +83,7 @@ int main ( int argc, char** argv )
     QString      strLoggingFileName          = "";
     QString      strRecordingDirName         = "";
     QString      strCentralServer            = "";
+    QString      strServerListFileName       = "";
     QString      strServerInfo               = "";
     QString      strServerPublicIP           = "";
     QString      strServerBindIP             = "";
@@ -200,6 +201,20 @@ int main ( int argc, char** argv )
             strCentralServer = strArgument;
             qInfo() << qUtf8Printable ( QString ( "- directory server: %1" ).arg ( strCentralServer ) );
             CommandLineOptions << "--directoryserver";
+            continue;
+        }
+
+        // Directory file ------------------------------------------------------
+        if ( GetStringArgument ( argc,
+                                 argv,
+                                 i,
+                                 "--directoryfile", // no short form
+                                 "--directoryfile",
+                                 strArgument ) )
+        {
+            strServerListFileName = strArgument;
+            qInfo() << qUtf8Printable ( QString ( "- directory server persistence file: %1" ).arg ( strServerListFileName ) );
+            CommandLineOptions << "--directoryfile";
             continue;
         }
 
@@ -667,6 +682,7 @@ int main ( int argc, char** argv )
                              iQosNumber,
                              strHTMLStatusFileName,
                              strCentralServer,
+                             strServerListFileName,
                              strServerInfo,
                              strServerPublicIP,
                              strServerListFilter,
@@ -773,6 +789,7 @@ QString UsageArguments ( char** argv )
            "  -d, --discononquit    disconnect all clients on quit\n"
            "  -e, --directoryserver address of the directory server with which to register\n"
            "                        (or 'localhost' to host a server list on this server)\n"
+           "      --directoryfile   enable server list persistence, set file name\n"
            "  -f, --listfilter      server list whitelist filter.  Format:\n"
            "                        [IP address 1];[IP address 2];[IP address 3]; ...\n"
            "  -F, --fastupdate      use 64 samples frame size mode\n"
