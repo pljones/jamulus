@@ -88,6 +88,7 @@ DEFINES += APP_VERSION=\\\"$$VERSION\\\" \
 DEFINES += QT_NO_DEPRECATED_WARNINGS
 
 win32 {
+    CONFIG += console # fixes issue with app going into background
     DEFINES -= UNICODE # fixes issue with ASIO SDK (asiolist.cpp is not unicode compatible)
     DEFINES += NOMINMAX # solves a compiler error in qdatetime.h (Qt5)
     RC_FILE = src/res/win-mainicon.rc
