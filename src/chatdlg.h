@@ -35,8 +35,10 @@
 #include <QDesktopServices>
 #include <QMessageBox>
 #include <QRegularExpression>
+#include <QSoundEffect>
 #include "global.h"
 #include "util.h"
+#include "client.h"
 #include "ui_chatdlgbase.h"
 
 /* Classes ********************************************************************/
@@ -44,8 +46,10 @@ class CChatDlg : public CBaseDlg, private Ui_CChatDlgBase
 {
     Q_OBJECT
 
+    CClient& Client;
+
 public:
-    CChatDlg ( QWidget* parent = nullptr );
+    CChatDlg ( CClient& client, QWidget* parent = nullptr );
 
     void AddChatText ( QString strChatText );
 

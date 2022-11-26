@@ -55,6 +55,7 @@ private:
     bool     bEnableRecording;
     QString  strRecordingDir;
     QThread* pthJamRecorder;
+    QMutex   Mutex;
 
     CJamRecorder* pJamRecorder;
     QString       strRecorderErrMsg;

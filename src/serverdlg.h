@@ -61,9 +61,23 @@ class CServerDlg : public CBaseDlg, private Ui_CServerDlgBase
     Q_OBJECT
 
 public:
-    CServerDlg ( CServer* pNServP, CServerSettings* pNSetP, const bool bStartMinimized, QWidget* parent = nullptr );
+    CServerDlg ( CServer&, QWidget* = nullptr );
 
 protected:
+    CServer& Server;
+
+    QMenuBar* pMenu;
+
+    bool            bSystemTrayIconAvailable;
+    QSystemTrayIcon SystemTrayIcon;
+    QPixmap         BitmapSystemTrayInactive;
+    QPixmap         BitmapSystemTrayActive;
+    QMenu*          pSystemTrayIconMenu;
+
+    QTimer                    Timer;
+    CVector<QTreeWidgetItem*> vecpListViewItems;
+    QMutex                    ListViewMutex;
+
     virtual void changeEvent ( QEvent* pEvent );
     virtual void closeEvent ( QCloseEvent* Event );
 
@@ -78,39 +92,25 @@ protected:
     void ModifyAutoStartEntry ( const bool bDoAutoStart );
     void UpdateRecorderStatus ( QString sessionDir );
 
-    QTimer           Timer;
-    CServer*         pServer;
-    CServerSettings* pSettings;
-
-    CVector<QTreeWidgetItem*> vecpListViewItems;
-    QMutex                    ListViewMutex;
-
-    QMenuBar* pMenu;
-
-    bool            bSystemTrayIconAvailable;
-    QSystemTrayIcon SystemTrayIcon;
-    QPixmap         BitmapSystemTrayInactive;
-    QPixmap         BitmapSystemTrayActive;
-    QMenu*          pSystemTrayIconMenu;
-
 public slots:
     // From the GUI
     void OnDirectoryTypeCurrentIndexChanged ( int iTypeIdx );
     void OnServerNameEditingFinished();
     void OnLocationCityEditingFinished();
     void OnLocationCountryCurrentIndexChanged ( int iCntryListItem );
-    void OnEnableRecorderStateChanged ( int value ) { pServer->SetEnableRecording ( Qt::CheckState::Checked == value ); }
-    void OnNewRecordingClicked() { pServer->RequestNewRecording(); }
-    void OnWelcomeMessageChanged() { pServer->SetWelcomeMessage ( tedWelcomeMessage->toPlainText() ); }
+    void OnEnableRecorderStateChanged ( int value ) { Server.SetEnableRecording ( Qt::CheckState::Checked == value ); }
+    void OnNewRecordingClicked() { Server.RequestNewRecording(); }
+    void OnWelcomeMessageChanged() { Server.SetWelcomeMessage ( tedWelcomeMessage->toPlainText() ); }
 
-    void OnLanguageChanged ( QString strLanguage ) { pSettings->strLanguage = strLanguage; }
+    void OnLanguageChanged ( QString strLanguage ) { Server.SetLanguage ( strLanguage ); }
+    void OnLanguageChangedByServer ( const QString strLanguage, const bool isNoTranslation );
     void OnCustomDirectoryEditingFinished();
     void OnRecordingDirClicked();
     void OnClearRecordingDirClicked();
     void OnServerListPersistenceClicked();
     void OnClearServerListPersistenceClicked();
     void OnStartOnOSStartStateChanged ( int value );
-    void OnEnableDelayPanningStateChanged ( int value ) { pServer->SetEnableDelayPanning ( Qt::CheckState::Checked == value ); }
+    void OnEnableDelayPanningStateChanged ( int value ) { Server.SetEnableDelayPanning ( Qt::CheckState::Checked == value ); }
 
     void OnSysTrayMenuOpen() { ShowWindowInForeground(); }
     void OnSysTrayMenuHide() { hide(); }

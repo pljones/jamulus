@@ -189,18 +189,18 @@ public:
 
     virtual ~CAudioMixerBoard();
 
-    void    SetSettingsPointer ( CClientSettings* pNSet ) { pSettings = pNSet; }
-    void    HideAll();
-    void    ApplyNewConClientList ( CVector<CChannelInfo>& vecChanInfo );
-    void    SetServerName ( const QString& strNewServerName );
-    QString GetServerName() { return strServerName; }
-    void    SetGUIDesign ( const EGUIDesign eNewDesign );
-    void    SetMeterStyle ( const EMeterStyle eNewMeterStyle );
-    void    SetDisplayPans ( const bool eNDP );
-    void    SetPanIsSupported();
-    void    SetRemoteFaderIsMute ( const int iChannelIdx, const bool bIsMute );
-    void    SetMyChannelID ( const int iChannelIdx ) { iMyChannelID = iChannelIdx; }
-    int     GetMyChannelID() const { return iMyChannelID; }
+    void       SetClient ( const CClient* client ) { pClient = client; }
+    void       HideAll();
+    void       ApplyNewConClientList ( CVector<CChannelInfo>& vecChanInfo );
+    void       SetServerName ( const QString& strNewServerName );
+    QString    GetServerName() { return strServerName; }
+    void       SetGUIDesign ( const EGUIDesign eNewDesign );
+    void       SetMeterStyle ( const EMeterStyle eNewMeterStyle );
+    void       SetDisplayPans ( const bool eNDP );
+    void       SetPanIsSupported();
+    void       SetRemoteFaderIsMute ( const int iChannelIdx, const bool bIsMute );
+    void       SetMyChannelID ( const int iChannelIdx ) { iMyChannelID = iChannelIdx; }
+    inline int GetMyChannelID() const { return iMyChannelID; }
 
     void SetFaderLevel ( const int iChannelIdx, const int iValue );
 
@@ -218,8 +218,8 @@ public:
 
     void SetChannelLevels ( const CVector<uint16_t>& vecChannelLevel );
 
-    void           SetRecorderState ( const ERecorderState newRecorderState );
-    ERecorderState GetRecorderState() { return eRecorderState; };
+    void                  SetRecorderState ( const ERecorderState newRecorderState );
+    inline ERecorderState GetRecorderState() { return eRecorderState; }
 
     void SetAllFaderLevelsToNewClientLevel();
     void StoreAllFaderSettings();
@@ -259,7 +259,7 @@ protected:
     void UpdateSoloStates();
     void UpdateTitle();
 
-    CClientSettings*        pSettings;
+    const CClient*          pClient;
     CVector<CChannelFader*> vecpChanFader;
     CMixerBoardScrollArea*  pScrollArea;
     QGridLayout*            pMainLayout;

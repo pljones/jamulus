@@ -83,8 +83,8 @@ public:
     void SetEnable ( const bool bNEnStat );
     bool IsEnabled() { return bIsEnabled; }
 
-    void                SetAddress ( const CHostAddress NAddr ) { InetAddr = NAddr; }
-    const CHostAddress& GetAddress() const { return InetAddr; }
+    void                       SetAddress ( const CHostAddress NAddr ) { InetAddr = NAddr; }
+    inline const CHostAddress& GetAddress() const { return InetAddr; }
 
     void ResetInfo()
     {
@@ -112,8 +112,8 @@ public:
 
     void SetRemoteChanPan ( const int iId, const float fPan ) { Protocol.CreateChanPanMes ( iId, fPan ); }
 
-    bool SetSockBufNumFrames ( const int iNewNumFrames, const bool bPreserve = false );
-    int  GetSockBufNumFrames() const { return iCurSockBufNumFrames; }
+    bool       SetSockBufNumFrames ( const int iNewNumFrames, const bool bPreserve = false );
+    inline int GetSockBufNumFrames() const { return iCurSockBufNumFrames; }
 
     void UpdateSocketBufferSize();
 
@@ -125,12 +125,11 @@ public:
                                     const int           iNewNetwFrameSizeFact,
                                     const int           iNewNumAudioChannels );
 
-    void SetDoAutoSockBufSize ( const bool bValue ) { bDoAutoSockBufSize = bValue; }
+    void        SetDoAutoSockBufSize ( const bool bValue ) { bDoAutoSockBufSize = bValue; }
+    inline bool GetDoAutoSockBufSize() const { return bDoAutoSockBufSize; }
 
-    bool GetDoAutoSockBufSize() const { return bDoAutoSockBufSize; }
-
-    int GetNetwFrameSizeFact() const { return iNetwFrameSizeFact; }
-    int GetCeltNumCodedBytes() const { return iCeltNumCodedBytes; }
+    inline int GetNetwFrameSizeFact() const { return iNetwFrameSizeFact; }
+    inline int GetCeltNumCodedBytes() const { return iCeltNumCodedBytes; }
 
     void GetBufErrorRates ( CVector<double>& vecErrRates, double& dLimit, double& dMaxUpLimit )
     {
@@ -138,7 +137,7 @@ public:
     }
 
     EAudComprType GetAudioCompressionType() { return eAudioCompressionType; }
-    int           GetNumAudioChannels() const { return iNumAudioChannels; }
+    inline int    GetNumAudioChannels() const { return iNumAudioChannels; }
 
     // network protocol interface
     void CreateJitBufMes ( const int iJitBufSize )

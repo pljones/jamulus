@@ -32,9 +32,11 @@
 #include <QLocale>
 #include <QtConcurrent>
 #include <QRegularExpression>
+
 #include "global.h"
 #include "util.h"
-#include "settings.h"
+#include "client.h"
+
 #include "multicolorled.h"
 #include "ui_connectdlgbase.h"
 
@@ -49,7 +51,7 @@ class CConnectDlg : public CBaseDlg, private Ui_CConnectDlgBase
     Q_OBJECT
 
 public:
-    CConnectDlg ( CClientSettings* pNSetP, const bool bNewShowCompleteRegList, const bool bNEnableIPv6, QWidget* parent = nullptr );
+    CConnectDlg ( CClient&, QWidget* parent = nullptr );
 
     void SetShowAllMusicians ( const bool bState ) { ShowAllMusicians ( bState ); }
     bool GetShowAllMusicians() { return bShowAllMusicians; }
@@ -60,11 +62,23 @@ public:
 
     void SetPingTimeAndNumClientsResult ( const CHostAddress& InetAddr, const int iPingTime, const int iNumClients );
 
-    bool    GetServerListItemWasChosen() const { return bServerListItemWasChosen; }
-    QString GetSelectedAddress() const { return strSelectedAddress; }
-    QString GetSelectedServerName() const { return strSelectedServerName; }
+    inline bool    GetServerListItemWasChosen() const { return bServerListItemWasChosen; }
+    inline QString GetSelectedAddress() const { return strSelectedAddress; }
+    inline QString GetSelectedServerName() const { return strSelectedServerName; }
+
+signals:
+    void ReqServerListQuery ( CHostAddress InetAddr );
+    void CreateCLServerListPingMes ( CHostAddress InetAddr );
+    void CreateCLServerListReqVerAndOSMes ( CHostAddress InetAddr );
+    void CreateCLServerListReqConnClientsListMes ( CHostAddress InetAddr );
+
+public slots:
+    void OnCustomDirectoriesChanged();
 
 protected:
+    void createUI();
+    void makeConnections();
+
     virtual void showEvent ( QShowEvent* );
     virtual void hideEvent ( QHideEvent* );
 
@@ -77,36 +91,28 @@ protected:
     void             EmitCLServerListPingMes ( const CHostAddress& haServerAddress );
     void             UpdateDirectoryComboBox();
 
-    CClientSettings* pSettings;
+    CClient& Client;
 
     QTimer       TimerPing;
     QTimer       TimerReRequestServList;
     QTimer       TimerInitialSort;
     CHostAddress haDirectoryAddress;
-    QString      strSelectedAddress;
-    QString      strSelectedServerName;
-    bool         bShowCompleteRegList;
-    bool         bServerListReceived;
-    bool         bReducedServerListReceived;
-    bool         bServerListItemWasChosen;
-    bool         bListFilterWasActive;
-    bool         bShowAllMusicians;
-    bool         bEnableIPv6;
+    QString      strSelectedAddress    = "";
+    QString      strSelectedServerName = "";
 
-public slots:
+    bool bServerListReceived        = false;
+    bool bReducedServerListReceived = false;
+    bool bServerListItemWasChosen   = false;
+    bool bListFilterWasActive       = false;
+    bool bShowAllMusicians          = true;
+
+protected slots:
     void OnServerListItemDoubleClicked ( QTreeWidgetItem* Item, int );
     void OnServerAddrEditTextChanged ( const QString& );
     void OnDirectoryChanged ( int iTypeIdx );
     void OnFilterTextEdited ( const QString& ) { UpdateListFilter(); }
     void OnExpandAllStateChanged ( int value ) { ShowAllMusicians ( value == Qt::Checked ); }
-    void OnCustomDirectoriesChanged();
     void OnConnectClicked();
     void OnTimerPing();
     void OnTimerReRequestServList();
-
-signals:
-    void ReqServerListQuery ( CHostAddress InetAddr );
-    void CreateCLServerListPingMes ( CHostAddress InetAddr );
-    void CreateCLServerListReqVerAndOSMes ( CHostAddress InetAddr );
-    void CreateCLServerListReqConnClientsListMes ( CHostAddress InetAddr );
 };

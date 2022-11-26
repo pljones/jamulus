@@ -23,15 +23,9 @@
  *
  \******************************************************************************/
 
-#include "global.h"
 #include "rpcserver.h"
 
-CRpcServer::CRpcServer ( QObject* parent, QString strBindIP, int iPort, QString strSecret ) :
-    QObject ( parent ),
-    strBindIP ( strBindIP ),
-    iPort ( iPort ),
-    strSecret ( strSecret ),
-    pTransportServer ( new QTcpServer ( this ) )
+CRpcServer::CRpcServer ( QObject* parent ) : QObject ( parent ), pTransportServer ( new QTcpServer ( this ) )
 {
     connect ( pTransportServer, &QTcpServer::newConnection, this, &CRpcServer::OnNewConnection );
 
@@ -42,7 +36,7 @@ CRpcServer::CRpcServer ( QObject* parent, QString strBindIP, int iPort, QString 
     HandleMethod ( "jamulus/getVersion", [=] ( const QJsonObject& params, QJsonObject& response ) {
         QJsonObject result{ { "version", VERSION } };
         response["result"] = result;
-        Q_UNUSED ( params );
+        Q_UNUSED ( params )
     } );
 }
 
@@ -57,11 +51,11 @@ CRpcServer::~CRpcServer()
 
 bool CRpcServer::Start()
 {
-    if ( iPort < 0 )
+    if ( AllOptions.io_jsonrpcport.value < 0 )
     {
         return false;
     }
-    if ( pTransportServer->listen ( QHostAddress ( strBindIP ), iPort ) )
+    if ( pTransportServer->listen ( QHostAddress ( AllOptions.so_jsonrpcbindip.value ), static_cast<ushort> ( AllOptions.io_jsonrpcport.value ) ) )
     {
         qInfo() << qUtf8Printable ( QString ( "- JSON-RPC: Server started on %1:%2" )
                                         .arg ( pTransportServer->serverAddress().toString() )
@@ -189,7 +183,7 @@ void CRpcServer::HandleApiAuth ( QTcpSocket* pSocket, const QJsonObject& params,
         return;
     }
 
-    if ( userSecret == strSecret )
+    if ( userSecret == AllOptions.so_jsonrpcsecret.value )
     {
         isAuthenticated[pSocket] = true;
         response["result"]       = "ok";

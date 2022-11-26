@@ -25,137 +25,149 @@
 #include "connectdlg.h"
 
 /* Implementation *************************************************************/
-CConnectDlg::CConnectDlg ( CClientSettings* pNSetP, const bool bNewShowCompleteRegList, const bool bNEnableIPv6, QWidget* parent ) :
-    CBaseDlg ( parent, Qt::Dialog ),
-    pSettings ( pNSetP ),
-    strSelectedAddress ( "" ),
-    strSelectedServerName ( "" ),
-    bShowCompleteRegList ( bNewShowCompleteRegList ),
-    bServerListReceived ( false ),
-    bReducedServerListReceived ( false ),
-    bServerListItemWasChosen ( false ),
-    bListFilterWasActive ( false ),
-    bShowAllMusicians ( true ),
-    bEnableIPv6 ( bNEnableIPv6 )
+CConnectDlg::CConnectDlg ( CClient& client, QWidget* parent ) : CBaseDlg ( parent, Qt::Dialog ), Client ( client )
 {
     setupUi ( this );
 
-    // Add help text to controls -----------------------------------------------
-    // directory
-    QString strDirectoryWT = "<b>" + tr ( "Directory" ) + ":</b> " +
-                             tr ( "Shows the servers listed by the selected directory. "
-                                  "You can add custom directories in Advanced Settings." );
-    QString strDirectoryAN = tr ( "Directory combo box" );
-
-    lblList->setWhatsThis ( strDirectoryWT );
-    lblList->setAccessibleName ( strDirectoryAN );
-    cbxDirectory->setWhatsThis ( strDirectoryWT );
-    cbxDirectory->setAccessibleName ( strDirectoryAN );
-
-    // filter
-    QString strFilterWT = "<b>" + tr ( "Filter" ) + ":</b> " +
-                          tr ( "Filters the server list by the given text. Note that the filter is case insensitive. "
-                               "A single # character will filter for those servers with at least one person connected." );
-    QString strFilterAN = tr ( "Filter edit box" );
-    lblFilter->setWhatsThis ( strFilterWT );
-    edtFilter->setWhatsThis ( strFilterWT );
-
-    lblFilter->setAccessibleName ( strFilterAN );
-    edtFilter->setAccessibleName ( strFilterAN );
-
-    // show all mucisians
-    chbExpandAll->setWhatsThis ( "<b>" + tr ( "Show All Musicians" ) + ":</b> " +
-                                 tr ( "Uncheck to collapse the server list to show just the server details. "
-                                      "Check to show everyone on the servers." ) );
-
-    chbExpandAll->setAccessibleName ( tr ( "Show all musicians check box" ) );
-
-    // server list view
-    lvwServers->setWhatsThis ( "<b>" + tr ( "Server List" ) + ":</b> " +
-                               tr ( "The Connection Setup window lists the available servers registered with "
-                                    "the selected directory. Use the Directory dropdown to change the directory, "
-                                    "find the server you want to join in the server list, click on it, and "
-                                    "then click the Connect button to connect. Alternatively, double click on "
-                                    "the server name to connect." ) +
-                               "<br>" + tr ( "Permanent servers (those that have been listed for longer than 48 hours) are shown in bold." ) +
-                               "<br>" + tr ( "You can add custom directories in Advanced Settings." ) );
-
-    lvwServers->setAccessibleName ( tr ( "Server list view" ) );
-
-    // server address
-    QString strServAddrH = "<b>" + tr ( "Server Address" ) + ":</b> " +
-                           tr ( "If you know the server address, you can connect to it "
-                                "using the Server name/Address field. An optional port number can be added after the server "
-                                "address using a colon as a separator, e.g. %1. "
-                                "The field will also show a list of the most recently used server addresses." )
-                               .arg ( QString ( "<tt>example.org:%1</tt>" ).arg ( DEFAULT_PORT_NUMBER ) );
-
-    lblServerAddr->setWhatsThis ( strServAddrH );
-    cbxServerAddr->setWhatsThis ( strServAddrH );
-
-    cbxServerAddr->setAccessibleName ( tr ( "Server address edit box" ) );
-    cbxServerAddr->setAccessibleDescription ( tr ( "Holds the current server address. It also stores old addresses in the combo box list." ) );
-
-    UpdateDirectoryComboBox();
-
-    // init server address combo box (max MAX_NUM_SERVER_ADDR_ITEMS entries)
-    cbxServerAddr->setMaxCount ( MAX_NUM_SERVER_ADDR_ITEMS );
-    cbxServerAddr->setInsertPolicy ( QComboBox::NoInsert );
-
-    // set up list view for connected clients (note that the last column size
-    // must not be specified since this column takes all the remaining space)
-#ifdef ANDROID
-    // for Android we need larger numbers because of the default font size
-    lvwServers->setColumnWidth ( 0, 200 );
-    lvwServers->setColumnWidth ( 1, 130 );
-    lvwServers->setColumnWidth ( 2, 100 );
-#else
-    lvwServers->setColumnWidth ( 0, 180 );
-    lvwServers->setColumnWidth ( 1, 75 );
-    lvwServers->setColumnWidth ( 2, 70 );
-    lvwServers->setColumnWidth ( 3, 220 );
-#endif
-    lvwServers->clear();
-
-    // make sure we do not get a too long horizontal scroll bar
-    lvwServers->header()->setStretchLastSection ( false );
-
-    // add invisible columns which are used for sorting the list and storing
-    // the current/maximum number of clients
-    // 0: server name
-    // 1: ping time
-    // 2: number of musicians (including additional strings like " (full)")
-    // 3: location
-    // 4: minimum ping time (invisible)
-    // 5: maximum number of clients (invisible)
-    lvwServers->setColumnCount ( 6 );
-    lvwServers->hideColumn ( 4 );
-    lvwServers->hideColumn ( 5 );
-
-    // per default the root shall not be decorated (to save space)
-    lvwServers->setRootIsDecorated ( false );
-
-    // make sure the connect button has the focus
-    butConnect->setFocus();
-
-    // for "show all servers" mode make sort by click on header possible
-    if ( bShowCompleteRegList )
-    {
-        lvwServers->setSortingEnabled ( true );
-        lvwServers->sortItems ( 0, Qt::AscendingOrder );
-    }
-
-    // set a placeholder text to explain how to filter occupied servers (#397)
-    edtFilter->setPlaceholderText ( tr ( "Filter text, or # for occupied servers" ) );
+    createUI();
 
     // setup timers
     TimerInitialSort.setSingleShot ( true ); // only once after list request
 
+    makeConnections();
+}
+
+void CConnectDlg::createUI()
+{
 #ifdef ANDROID
     // for the android version maximize the window
     setWindowState ( Qt::WindowMaximized );
 #endif
 
+    // Add help text to controls -----------------------------------------------
+    // directory
+    {
+        QString strDirectoryWT = "<b>" + tr ( "Directory" ) + ":</b> " +
+                                 tr ( "Shows the servers listed by the selected directory. "
+                                      "You can add custom directories in Advanced Settings." );
+        QString strDirectoryAN = tr ( "Directory combo box" );
+
+        lblList->setWhatsThis ( strDirectoryWT );
+        lblList->setAccessibleName ( strDirectoryAN );
+        cbxDirectory->setWhatsThis ( strDirectoryWT );
+        cbxDirectory->setAccessibleName ( strDirectoryAN );
+    }
+
+    // filter
+    {
+        QString strFilterWT = "<b>" + tr ( "Filter" ) + ":</b> " +
+                              tr ( "Filters the server list by the given text. Note that the filter is case insensitive. "
+                                   "A single # character will filter for those servers with at least one person connected." );
+        QString strFilterAN = tr ( "Filter edit box" );
+        lblFilter->setWhatsThis ( strFilterWT );
+        edtFilter->setWhatsThis ( strFilterWT );
+
+        lblFilter->setAccessibleName ( strFilterAN );
+        edtFilter->setAccessibleName ( strFilterAN );
+    }
+
+    // show all mucisians
+    {
+        chbExpandAll->setWhatsThis ( "<b>" + tr ( "Show All Musicians" ) + ":</b> " +
+                                     tr ( "Uncheck to collapse the server list to show just the server details. "
+                                          "Check to show everyone on the servers." ) );
+
+        chbExpandAll->setAccessibleName ( tr ( "Show all musicians check box" ) );
+    }
+
+    // server list view
+    {
+        lvwServers->setWhatsThis ( "<b>" + tr ( "Server List" ) + ":</b> " +
+                                   tr ( "The Connection Setup window lists the available servers registered with "
+                                        "the selected directory. Use the Directory dropdown to change the directory, "
+                                        "find the server you want to join in the server list, click on it, and "
+                                        "then click the Connect button to connect. Alternatively, double click on "
+                                        "the server name to connect." ) +
+                                   "<br>" + tr ( "Permanent servers (those that have been listed for longer than 48 hours) are shown in bold." ) +
+                                   "<br>" + tr ( "You can add custom directories in Advanced Settings." ) );
+
+        lvwServers->setAccessibleName ( tr ( "Server list view" ) );
+    }
+
+    // server address
+    {
+        QString strServAddrH = "<b>" + tr ( "Server Address" ) + ":</b> " +
+                               tr ( "If you know the IP address or URL of a server, you can connect to it "
+                                    "using the Server name/Address field. An optional port number can be added after the IP "
+                                    "address or URL using a colon as a separator, e.g. %1. "
+                                    "The field will also show a list of the most recently used server addresses." )
+                                   .arg ( QString ( "<tt>example.org:%1</tt>" ).arg ( DEFAULT_PORT_NUMBER ) );
+
+        lblServerAddr->setWhatsThis ( strServAddrH );
+        cbxServerAddr->setWhatsThis ( strServAddrH );
+
+        cbxServerAddr->setAccessibleName ( tr ( "Server address edit box" ) );
+        cbxServerAddr->setAccessibleDescription (
+            tr ( "Holds the current server IP address or URL. It also stores old URLs in the combo box list." ) );
+    }
+
+    UpdateDirectoryComboBox();
+
+    // set a placeholder text to explain how to filter occupied servers (#397)
+    edtFilter->setPlaceholderText ( tr ( "Filter text, or # for occupied servers" ) );
+
+    // set up list view for connected clients (note that the last column size
+    // must not be specified since this column takes all the remaining space)
+    {
+#ifdef ANDROID
+        // for Android we need larger numbers because of the default font size
+        lvwServers->setColumnWidth ( 0, 200 );
+        lvwServers->setColumnWidth ( 1, 130 );
+        lvwServers->setColumnWidth ( 2, 100 );
+#else
+        lvwServers->setColumnWidth ( 0, 180 );
+        lvwServers->setColumnWidth ( 1, 75 );
+        lvwServers->setColumnWidth ( 2, 70 );
+        lvwServers->setColumnWidth ( 3, 220 );
+#endif
+        lvwServers->clear();
+
+        // make sure we do not get a too long horizontal scroll bar
+        lvwServers->header()->setStretchLastSection ( false );
+
+        // add invisible columns which are used for sorting the list and storing
+        // the current/maximum number of clients
+        // 0: server name
+        // 1: ping time
+        // 2: number of musicians (including additional strings like " (full)")
+        // 3: location
+        // 4: minimum ping time (invisible)
+        // 5: maximum number of clients (invisible)
+        lvwServers->setColumnCount ( 6 );
+        lvwServers->hideColumn ( 4 );
+        lvwServers->hideColumn ( 5 );
+
+        // per default the root shall not be decorated (to save space)
+        lvwServers->setRootIsDecorated ( false );
+    }
+
+    // for "show all servers" mode make sort by click on header possible
+    if ( Client.IsShowAllServers() )
+    {
+        lvwServers->setSortingEnabled ( true );
+        lvwServers->sortItems ( 0, Qt::AscendingOrder );
+    }
+
+    // init server address combo box (max MAX_NUM_SERVER_ADDR_ITEMS entries)
+    cbxServerAddr->setMaxCount ( MAX_NUM_SERVER_ADDR_ITEMS );
+    cbxServerAddr->setInsertPolicy ( QComboBox::NoInsert );
+
+    // make sure the connect button has the focus
+    butConnect->setFocus();
+}
+
+void CConnectDlg::makeConnections()
+{
     // Connections -------------------------------------------------------------
     // list view
     QObject::connect ( lvwServers, &QTreeWidget::itemDoubleClicked, this, &CConnectDlg::OnServerListItemDoubleClicked );
@@ -191,11 +203,12 @@ void CConnectDlg::showEvent ( QShowEvent* )
     cbxServerAddr->clear();
     cbxServerAddr->clearEditText();
 
-    for ( int iLEIdx = 0; iLEIdx < MAX_NUM_SERVER_ADDR_ITEMS; iLEIdx++ )
+    const CVector<QString>& serverAddresses = Client.GetServerAddresses();
+    for ( uint iLEIdx = 0; iLEIdx < MAX_NUM_SERVER_ADDR_ITEMS; iLEIdx++ )
     {
-        if ( !pSettings->vstrIPAddress[iLEIdx].isEmpty() )
+        if ( !serverAddresses.at ( iLEIdx ).isEmpty() )
         {
-            cbxServerAddr->addItem ( pSettings->vstrIPAddress[iLEIdx] );
+            cbxServerAddr->addItem ( serverAddresses.at ( iLEIdx ) );
         }
     }
 
@@ -221,16 +234,16 @@ void CConnectDlg::RequestServerList()
 
     // update list combo box (disable events to avoid a signal)
     cbxDirectory->blockSignals ( true );
-    if ( pSettings->eDirectoryType == AT_CUSTOM )
+    if ( Client.GetDirectoryType() == AT_CUSTOM )
     {
         // iCustomDirectoryIndex is non-zero only if eDirectoryType == AT_CUSTOM
         // find the combobox item that corresponds to vstrDirectoryAddress[iCustomDirectoryIndex]
         // (the current selected custom directory)
-        cbxDirectory->setCurrentIndex ( cbxDirectory->findData ( QVariant ( pSettings->iCustomDirectoryIndex ) ) );
+        cbxDirectory->setCurrentIndex ( cbxDirectory->findData ( QVariant ( Client.GetCustomDirectoryIndex() ) ) );
     }
     else
     {
-        cbxDirectory->setCurrentIndex ( static_cast<int> ( pSettings->eDirectoryType ) );
+        cbxDirectory->setCurrentIndex ( static_cast<int> ( Client.GetDirectoryType() ) );
     }
     cbxDirectory->blockSignals ( false );
 
@@ -241,7 +254,7 @@ void CConnectDlg::RequestServerList()
 
     // Allow IPv4 only for communicating with Directories
     if ( NetworkUtil().ParseNetworkAddress (
-             NetworkUtil::GetDirectoryAddress ( pSettings->eDirectoryType, pSettings->vstrDirectoryAddress[pSettings->iCustomDirectoryIndex] ),
+             NetworkUtil::GetDirectoryAddress ( Client.GetDirectoryType(), Client.GetDirectoryAddresses().at ( Client.GetCustomDirectoryIndex() ) ),
              haDirectoryAddress,
              false ) )
     {
@@ -270,14 +283,14 @@ void CConnectDlg::OnDirectoryChanged ( int iTypeIdx )
     if ( iTypeIdx >= AT_CUSTOM )
     {
         // the value for the index into the vector vstrDirectoryAddress is in the user data of the combobox item
-        pSettings->iCustomDirectoryIndex = cbxDirectory->itemData ( iTypeIdx ).toInt();
-        iTypeIdx                         = AT_CUSTOM;
+        Client.SetCustomDirectoryIndex ( cbxDirectory->itemData ( iTypeIdx ).toUInt() );
+        iTypeIdx = AT_CUSTOM;
     }
     else
     {
-        pSettings->iCustomDirectoryIndex = 0;
+        Client.SetCustomDirectoryIndex ( 0 );
     }
-    pSettings->eDirectoryType = static_cast<EDirectoryType> ( iTypeIdx );
+    Client.SetDirectoryType ( static_cast<EDirectoryType> ( iTypeIdx ) );
     RequestServerList();
 }
 
@@ -331,9 +344,9 @@ void CConnectDlg::SetServerList ( const CHostAddress& InetAddr, const CVector<CS
     lvwServers->clear();
 
     // add list item for each server in the server list
-    const int iServerInfoLen = vecServerInfo.Size();
+    const uint iServerInfoLen = static_cast<uint> ( vecServerInfo.Size() );
 
-    for ( int iIdx = 0; iIdx < iServerInfoLen; iIdx++ )
+    for ( uint iIdx = 0; iIdx < iServerInfoLen; iIdx++ )
     {
         // get the host address, note that for the very first entry which is
         // the directory server, we have to use the receive host address
@@ -355,9 +368,29 @@ void CConnectDlg::SetServerList ( const CHostAddress& InetAddr, const CVector<CS
 
         // make the entry invisible (will be set to visible on successful ping
         // result) if the complete list of registered servers shall not be shown
-        if ( !bShowCompleteRegList )
+        if ( !Client.IsShowAllServers() )
         {
             pNewListViewItem->setHidden ( true );
+        }
+        else
+        {
+            if ( iIdx == 0 )
+            {
+                pNewListViewItem->setToolTip ( 0,
+                                               QString ( "HostAddr %1; LHostAddr %2 // InetAddr %3 -> %4" )
+                                                   .arg ( vecServerInfo[iIdx].HostAddr.toString() )
+                                                   .arg ( vecServerInfo[iIdx].LHostAddr.toString() )
+                                                   .arg ( InetAddr.toString() )
+                                                   .arg ( CurHostAddress.toString() ) );
+            }
+            else
+            {
+                pNewListViewItem->setToolTip ( 0,
+                                               QString ( "HostAddr %1; LHostAddr %2 -> %3" )
+                                                   .arg ( vecServerInfo[iIdx].HostAddr.toString() )
+                                                   .arg ( vecServerInfo[iIdx].LHostAddr.toString() )
+                                                   .arg ( CurHostAddress.toString() ) );
+            }
         }
 
         // server name (if empty, show host address instead)
@@ -383,7 +416,7 @@ void CConnectDlg::SetServerList ( const CHostAddress& InetAddr, const CVector<CS
         }
 
         // in case of all servers shown, add the registration number at the beginning
-        if ( bShowCompleteRegList )
+        if ( Client.IsShowAllServers() )
         {
             pNewListViewItem->setText ( 0, QString ( "%1: " ).arg ( 1 + iIdx, 3 ) + pNewListViewItem->text ( 0 ) );
         }
@@ -550,12 +583,11 @@ void CConnectDlg::OnServerAddrEditTextChanged ( const QString& )
 
 void CConnectDlg::OnCustomDirectoriesChanged()
 {
-
     QString strPreviousSelection = cbxDirectory->currentText();
     UpdateDirectoryComboBox();
     // after updating the combobox, we must re-select the previous directory selection
 
-    if ( pSettings->eDirectoryType == AT_CUSTOM )
+    if ( Client.GetDirectoryType() == AT_CUSTOM )
     {
         // check if the currently select custom directory still exists in the now potentially re-ordered vector,
         // if so, then change to its new index.  (addresses Issue #1899)
@@ -563,17 +595,17 @@ void CConnectDlg::OnCustomDirectoriesChanged()
         if ( iNewIndex == INVALID_INDEX )
         {
             // previously selected custom directory has been deleted.  change to default directory
-            pSettings->eDirectoryType        = static_cast<EDirectoryType> ( AT_DEFAULT );
-            pSettings->iCustomDirectoryIndex = 0;
+            Client.SetDirectoryType ( AT_DEFAULT );
+            Client.SetCustomDirectoryIndex ( 0 );
             RequestServerList();
         }
         else
         {
             // find previously selected custom directory in the now potentially re-ordered vector
-            pSettings->eDirectoryType        = static_cast<EDirectoryType> ( AT_CUSTOM );
-            pSettings->iCustomDirectoryIndex = cbxDirectory->itemData ( iNewIndex ).toInt();
+            Client.SetDirectoryType ( AT_CUSTOM );
+            Client.SetCustomDirectoryIndex ( cbxDirectory->itemData ( iNewIndex ).toUInt() );
             cbxDirectory->blockSignals ( true );
-            cbxDirectory->setCurrentIndex ( cbxDirectory->findData ( QVariant ( pSettings->iCustomDirectoryIndex ) ) );
+            cbxDirectory->setCurrentIndex ( cbxDirectory->findData ( QVariant ( Client.GetCustomDirectoryIndex() ) ) );
             cbxDirectory->blockSignals ( false );
         }
     }
@@ -581,7 +613,7 @@ void CConnectDlg::OnCustomDirectoriesChanged()
     {
         // selected directory was not a custom directory
         cbxDirectory->blockSignals ( true );
-        cbxDirectory->setCurrentIndex ( static_cast<int> ( pSettings->eDirectoryType ) );
+        cbxDirectory->setCurrentIndex ( static_cast<int> ( Client.GetDirectoryType() ) );
         cbxDirectory->blockSignals ( false );
     }
 }
@@ -656,7 +688,7 @@ void CConnectDlg::UpdateListFilter()
             }
 
             // only update Hide state if ping time was received
-            if ( !pCurListViewItem->text ( 1 ).isEmpty() || bShowCompleteRegList )
+            if ( !pCurListViewItem->text ( 1 ).isEmpty() || Client.IsShowAllServers() )
             {
                 // only update hide and expand status if the hide state has to be changed to
                 // preserve if user clicked on expand icon manually
@@ -681,7 +713,7 @@ void CConnectDlg::UpdateListFilter()
                 QTreeWidgetItem* pCurListViewItem = lvwServers->topLevelItem ( iIdx );
 
                 // if ping time is empty, hide item (if not already hidden)
-                if ( pCurListViewItem->text ( 1 ).isEmpty() && !bShowCompleteRegList )
+                if ( pCurListViewItem->text ( 1 ).isEmpty() && !Client.IsShowAllServers() )
                 {
                     pCurListViewItem->setHidden ( true );
                 }
@@ -744,7 +776,7 @@ void CConnectDlg::OnTimerPing()
         // in the server list item GUI control element
         if ( NetworkUtil().ParseNetworkAddress ( lvwServers->topLevelItem ( iIdx )->data ( 0, Qt::UserRole ).toString(),
                                                  haServerAddress,
-                                                 bEnableIPv6 ) )
+                                                 Client.IsIPv6Enabled() ) )
         {
             // if address is valid, send ping message using a new thread
 #if QT_VERSION >= QT_VERSION_CHECK( 6, 0, 0 )
@@ -799,7 +831,7 @@ void CConnectDlg::SetPingTimeAndNumClientsResult ( const CHostAddress& InetAddr,
 
         // for debugging it is good to see the current ping time in the list
         // and not the minimum ping time -> overwrite the value for debugging
-        if ( bShowCompleteRegList )
+        if ( Client.IsShowAllServers() )
         {
             iMinPingTime = iPingTime;
         }
@@ -870,7 +902,7 @@ void CConnectDlg::SetPingTimeAndNumClientsResult ( const CHostAddress& InetAddr,
         // could lead to connecting an incorrect server) the sorting is disabled
         // as long as the mouse is over the list (but it is not disabled for the
         // initial timer of about 2s, see TimerInitialSort) (#293).
-        if ( bDoSorting && !bShowCompleteRegList &&
+        if ( bDoSorting && !Client.IsShowAllServers() &&
              ( TimerInitialSort.isActive() || !lvwServers->underMouse() ) ) // do not sort if "show all servers"
         {
             lvwServers->sortByColumn ( 4, Qt::AscendingOrder );
@@ -964,12 +996,14 @@ void CConnectDlg::UpdateDirectoryComboBox()
 
     // because custom directories are always added to the top of the vector, add the vector
     // contents to the combobox in reverse order
-    for ( int i = MAX_NUM_SERVER_ADDR_ITEMS - 1; i >= 0; i-- )
+
+    const CVector<QString>& vsDirectoryAddresses = Client.GetDirectoryAddresses();
+    for ( size_t i = vsDirectoryAddresses.size(); i > 0; i-- )
     {
-        if ( pSettings->vstrDirectoryAddress[i] != "" )
+        if ( !vsDirectoryAddresses.at ( i - 1 ).isEmpty() )
         {
-            // add vector index (i) to the combobox as user data
-            cbxDirectory->addItem ( pSettings->vstrDirectoryAddress[i], i );
+            // store the index as user data to the combo box item, too
+            cbxDirectory->addItem ( vsDirectoryAddresses.at ( i - 1 ), static_cast<int> ( i - 1 ) );
         }
     }
 }

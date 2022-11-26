@@ -75,6 +75,8 @@ void CJamController::SetEnableRecording ( bool bNewEnableRecording, bool isRunni
 
 void CJamController::SetRecordingDir ( QString newRecordingDir, int iServerFrameSizeSamples, bool bDisableRecording )
 {
+    QMutexLocker locker ( &Mutex );
+
     if ( bRecorderInitialised && pthJamRecorder != nullptr )
     {
         // We have a thread and we want to start a new one.

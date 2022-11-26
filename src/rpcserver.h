@@ -36,6 +36,9 @@
 #include <QVector>
 #include <memory>
 
+#include "global.h"
+#include "options.h"
+
 typedef std::function<void ( const QJsonObject&, QJsonObject& )> CRpcHandler;
 
 /* Classes ********************************************************************/
@@ -44,7 +47,7 @@ class CRpcServer : public QObject
     Q_OBJECT
 
 public:
-    CRpcServer ( QObject* parent, QString strBindIP, int iPort, QString secret );
+    CRpcServer ( QObject* parent = nullptr );
     virtual ~CRpcServer();
 
     bool Start();
@@ -64,9 +67,6 @@ public:
     static const int iErrUnauthenticated      = 401;
 
 private:
-    QString     strBindIP;
-    int         iPort;
-    QString     strSecret;
     QTcpServer* pTransportServer;
 
     // A map from method name to handler functions

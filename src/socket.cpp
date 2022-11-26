@@ -40,13 +40,9 @@
 
 // we have different connections for client and server, created after Init in corresponding constructor
 
-CSocket::CSocket ( CChannel* pNewChannel, const quint16 iPortNumber, const quint16 iQosNumber, const QString& strServerBindIP, bool bEnableIPv6 ) :
-    pChannel ( pNewChannel ),
-    bIsClient ( true ),
-    bJitterBufferOK ( true ),
-    bEnableIPv6 ( bEnableIPv6 )
+CSocket::CSocket ( CChannel& Channel ) : pChannel ( &Channel ), bIsClient ( true )
 {
-    Init ( iPortNumber, iQosNumber, strServerBindIP );
+    Init();
 
     // client connections:
     QObject::connect ( this, &CSocket::ProtocolMessageReceived, pChannel, &CChannel::OnProtocolMessageReceived );
@@ -56,13 +52,9 @@ CSocket::CSocket ( CChannel* pNewChannel, const quint16 iPortNumber, const quint
     QObject::connect ( this, static_cast<void ( CSocket::* )()> ( &CSocket::NewConnection ), pChannel, &CChannel::OnNewConnection );
 }
 
-CSocket::CSocket ( CServer* pNServP, const quint16 iPortNumber, const quint16 iQosNumber, const QString& strServerBindIP, bool bEnableIPv6 ) :
-    pServer ( pNServP ),
-    bIsClient ( false ),
-    bJitterBufferOK ( true ),
-    bEnableIPv6 ( bEnableIPv6 )
+CSocket::CSocket ( CServer& Server ) : pServer ( &Server ), bIsClient ( false )
 {
-    Init ( iPortNumber, iQosNumber, strServerBindIP );
+    Init();
 
     // server connections:
     QObject::connect ( this, &CSocket::ProtocolMessageReceived, pServer, &CServer::OnProtocolMessageReceived );
@@ -77,17 +69,11 @@ CSocket::CSocket ( CServer* pNServP, const quint16 iPortNumber, const quint16 iQ
     QObject::connect ( this, &CSocket::ServerFull, pServer, &CServer::OnServerFull );
 }
 
-void CSocket::Init ( const quint16 iNewPortNumber, const quint16 iNewQosNumber, const QString& strNewServerBindIP )
+void CSocket::Init()
 {
     uSockAddr UdpSocketAddr;
-
-    int       UdpSocketAddrLen;
-    uint16_t* UdpPort;
-
-    // first store parameters, in case reinit is required (mostly for iOS)
-    iPortNumber     = iNewPortNumber;
-    iQosNumber      = iNewQosNumber;
-    strServerBindIP = strNewServerBindIP;
+    socklen_t UdpSocketAddrLen;
+    uint16_t* UdpPort; // pointer to port (IPv4 vs IPv6) in UdpSocketAddr
 
 #ifdef _WIN32
     // for the Windows socket usage we have to start it up first
@@ -102,23 +88,26 @@ void CSocket::Init ( const quint16 iNewPortNumber, const quint16 iNewQosNumber, 
 
     memset ( &UdpSocketAddr, 0, sizeof ( UdpSocketAddr ) );
 
-    if ( bEnableIPv6 )
+    if ( AllOptions.fo_ipv6.value )
     {
         // try to create a IPv6 UDP socket
         UdpSocket = socket ( AF_INET6, SOCK_DGRAM, 0 );
+        // UdpSocket is unsigned on Windows:
+#ifndef _WIN32
         if ( UdpSocket == -1 )
         {
             // IPv6 requested but not available, throw error
             throw CGenErr ( "IPv6 requested but not available on this system.", "Network Error" );
         }
+#endif
 
         // The IPV6_V6ONLY socket option must be false in order for the socket to listen on both protocols.
         // On Linux it's false by default on most (all?) distros, but on Windows it is true by default
-        const uint8_t no = 0;
-        setsockopt ( UdpSocket, IPPROTO_IPV6, IPV6_V6ONLY, (const char*) &no, sizeof ( no ) );
+        const char ipv6_only_false = 0;
+        setsockopt ( UdpSocket, IPPROTO_IPV6, IPV6_V6ONLY, static_cast<const char*> ( &ipv6_only_false ), sizeof ( ipv6_only_false ) );
 
         // set the QoS
-        const char tos = (char) iQosNumber; // Quality of Service
+        const char tos = static_cast<char> ( AllOptions.io_qos.value ); // Quality of Service
         setsockopt ( UdpSocket, IPPROTO_IPV6, IPV6_TCLASS, &tos, sizeof ( tos ) );
 
         UdpSocketAddr.sa6.sin6_family = AF_INET6;
@@ -130,9 +119,9 @@ void CSocket::Init ( const quint16 iNewPortNumber, const quint16 iNewQosNumber, 
         // FIXME: If binding a dual-protocol interface to a specific address, does it cease to be dual-protocol?
 
         // TODO - ALLOW IPV6 ADDRESS
-        // if ( !strServerBindIP.isEmpty() )
+        // if ( !allOptions.so_serverbindip.value.isEmpty() )
         //{
-        //    UdpSocketInAddr.sin_addr.s_addr = htonl ( QHostAddress ( strServerBindIP ).toIPv4Address() );
+        //    UdpSocketInAddr.sin_addr.s_addr = htonl ( QHostAddress ( allOptions.so_serverbindip.value ).toIPv4Address() );
         //}
         // END TODO - ALLOW IPV6 ADDRESS
     }
@@ -140,14 +129,17 @@ void CSocket::Init ( const quint16 iNewPortNumber, const quint16 iNewQosNumber, 
     {
         // create the UDP socket for IPv4
         UdpSocket = socket ( AF_INET, SOCK_DGRAM, 0 );
+        // UdpSocket is unsigned on Windows:
+#ifndef _WIN32
         if ( UdpSocket == -1 )
         {
             // IPv4 requested but not available, throw error (should never happen, but check anyway)
             throw CGenErr ( "IPv4 requested but not available on this system.", "Network Error" );
         }
+#endif
 
         // set the QoS
-        const char tos = (char) iQosNumber; // Quality of Service
+        const char tos = static_cast<char> ( AllOptions.io_qos.value ); // Quality of Service
         setsockopt ( UdpSocket, IPPROTO_IP, IP_TOS, &tos, sizeof ( tos ) );
 
         // preinitialize socket in address (only the port number is missing)
@@ -157,9 +149,9 @@ void CSocket::Init ( const quint16 iNewPortNumber, const quint16 iNewQosNumber, 
 
         UdpPort = &UdpSocketAddr.sa4.sin_port; // where to put the port number
 
-        if ( !strServerBindIP.isEmpty() )
+        if ( !AllOptions.so_serverbindip.value.isEmpty() )
         {
-            UdpSocketAddr.sa4.sin_addr.s_addr = htonl ( QHostAddress ( strServerBindIP ).toIPv4Address() );
+            UdpSocketAddr.sa4.sin_addr.s_addr = htonl ( QHostAddress ( AllOptions.so_serverbindip.value ).toIPv4Address() );
         }
     }
 
@@ -175,43 +167,39 @@ void CSocket::Init ( const quint16 iNewPortNumber, const quint16 iNewQosNumber, 
     // initialize the listening socket
     bool bSuccess;
 
-    if ( bIsClient )
+    if ( bIsClient && AllOptions.io_port.value == 0 )
     {
-        if ( iPortNumber == 0 )
+        // For the client, if port number is 0, bind to a random available port
+        *UdpPort = htons ( 0 );
+
+        bSuccess = ( ::bind ( UdpSocket, &UdpSocketAddr.sa, UdpSocketAddrLen ) == 0 );
+    }
+    else if ( bIsClient && AllOptions.io_port.value == AllOptions.io_port.defvalue )
+    {
+        // If the port is not available, try "NUM_SOCKET_PORTS_TO_TRY" times
+        // with incremented port numbers. Randomize the start port, in case a
+        // faulty router gets stuck and confused by a particular port (like
+        // the starting port). Might work around frustrating "cannot connect"
+        // problems (#568)
+        const quint16 startingPortNumber = static_cast<quint16> ( AllOptions.io_port.value ) + rand() % NUM_SOCKET_PORTS_TO_TRY;
+
+        quint16 iClientPortIncrement = 0;
+        bSuccess                     = false; // initialization for while loop
+
+        while ( !bSuccess && ( iClientPortIncrement <= NUM_SOCKET_PORTS_TO_TRY ) )
         {
-            // if port number is 0, bind the client to a random available port
-            *UdpPort = htons ( 0 );
+            *UdpPort = htons ( startingPortNumber + iClientPortIncrement );
 
             bSuccess = ( ::bind ( UdpSocket, &UdpSocketAddr.sa, UdpSocketAddrLen ) == 0 );
-        }
-        else
-        {
-            // If the port is not available, try "NUM_SOCKET_PORTS_TO_TRY" times
-            // with incremented port numbers. Randomize the start port, in case a
-            // faulty router gets stuck and confused by a particular port (like
-            // the starting port). Might work around frustrating "cannot connect"
-            // problems (#568)
-            const quint16 startingPortNumber = iPortNumber + rand() % NUM_SOCKET_PORTS_TO_TRY;
 
-            quint16 iClientPortIncrement = 0;
-            bSuccess                     = false; // initialization for while loop
-
-            while ( !bSuccess && ( iClientPortIncrement <= NUM_SOCKET_PORTS_TO_TRY ) )
-            {
-                *UdpPort = htons ( startingPortNumber + iClientPortIncrement );
-
-                bSuccess = ( ::bind ( UdpSocket, &UdpSocketAddr.sa, UdpSocketAddrLen ) == 0 );
-
-                iClientPortIncrement++;
-            }
+            iClientPortIncrement++;
         }
     }
     else
     {
-        // for the server, only try the given port number and do not try out
-        // other port numbers to bind since it is important that the server
-        // gets the desired port number
-        *UdpPort = htons ( iPortNumber );
+        // for the server, or where a port number is specified on the client,
+        // only try the default or specified port
+        *UdpPort = htons ( static_cast<quint16> ( AllOptions.io_port.value ) );
 
         bSuccess = ( ::bind ( UdpSocket, &UdpSocketAddr.sa, UdpSocketAddrLen ) == 0 );
     }
@@ -219,9 +207,21 @@ void CSocket::Init ( const quint16 iNewPortNumber, const quint16 iNewQosNumber, 
     if ( !bSuccess )
     {
         // we cannot bind socket, throw error
-        throw CGenErr ( "Cannot bind the socket (maybe "
-                        "the software is already running).",
-                        "Network Error" );
+        throw CGenErr ( "Cannot bind the socket (maybe the software is already running).", "Network Error" );
+    }
+
+    if ( ::getsockname ( UdpSocket, &UdpSocketAddr.sa, &UdpSocketAddrLen ) == -1 )
+    {
+        throw CGenErr ( "Cannot read socket address.", "Network Error" );
+    }
+
+    if ( *UdpPort != htons ( static_cast<quint16> ( AllOptions.io_port.value ) ) )
+    {
+        if ( !AllOptions.fo_quiet.value )
+        {
+            std::cout << "** Port changed from " << AllOptions.io_port.value << " to " << ntohs ( *UdpPort ) << "\n";
+        }
+        AllOptions.io_port.value = ntohs ( *UdpPort );
     }
 }
 
@@ -274,7 +274,7 @@ void CSocket::SendPacket ( const CVector<uint8_t>& vecbySendBuf, const CHostAddr
         {
             if ( HostAddr.InetAddr.protocol() == QAbstractSocket::IPv4Protocol )
             {
-                if ( bEnableIPv6 )
+                if ( AllOptions.fo_ipv6.value )
                 {
                     // Linux and Mac allow to pass an AF_INET address to a dual-stack socket,
                     // but Windows does not. So use a V4MAPPED address in an AF_INET6 sockaddr,
@@ -311,7 +311,7 @@ void CSocket::SendPacket ( const CVector<uint8_t>& vecbySendBuf, const CHostAddr
                                       sizeof ( UdpSocketAddr.sa4 ) );
                 }
             }
-            else if ( bEnableIPv6 )
+            else if ( AllOptions.fo_ipv6.value )
             {
                 UdpSocketAddr.sa6.sin6_family = AF_INET6;
                 UdpSocketAddr.sa6.sin6_port   = htons ( HostAddr.iPort );
@@ -332,7 +332,7 @@ void CSocket::SendPacket ( const CVector<uint8_t>& vecbySendBuf, const CHostAddr
 
 #ifdef Q_OS_IOS
             // qDebug("Socket send exception - mostly happens in iOS when returning from idle");
-            Init ( iPortNumber, iQosNumber, strServerBindIP ); // reinit
+            Init(); // reinit
 
             // loop back to retry
 #endif

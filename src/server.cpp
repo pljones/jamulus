@@ -25,61 +25,20 @@
 #include "server.h"
 
 // CServer implementation ******************************************************
-CServer::CServer ( const int          iNewMaxNumChan,
-                   const QString&     strLoggingFileName,
-                   const QString&     strServerBindIP,
-                   const quint16      iPortNumber,
-                   const quint16      iQosNumber,
-                   const QString&     strHTMLStatusFileName,
-                   const QString&     strDirectoryAddress,
-                   const QString&     strServerListFileName,
-                   const QString&     strServerInfo,
-                   const QString&     strServerListFilter,
-                   const QString&     strServerPublicIP,
-                   const QString&     strNewWelcomeMessage,
-                   const QString&     strRecordingDirName,
-                   const bool         bNDisconnectAllClientsOnQuit,
-                   const bool         bNUseDoubleSystemFrameSize,
-                   const bool         bNUseMultithreading,
-                   const bool         bDisableRecording,
-                   const bool         bNDelayPan,
-                   const bool         bNEnableIPv6,
-                   const ELicenceType eNLicenceType ) :
-    bUseDoubleSystemFrameSize ( bNUseDoubleSystemFrameSize ),
-    bUseMultithreading ( bNUseMultithreading ),
-    iMaxNumChannels ( iNewMaxNumChan ),
-    iCurNumChannels ( 0 ),
-    Socket ( this, iPortNumber, iQosNumber, strServerBindIP, bNEnableIPv6 ),
-    Logging(),
-    iFrameCount ( 0 ),
-    bWriteStatusHTMLFile ( false ),
-    strServerHTMLFileListName ( strHTMLStatusFileName ),
-    HighPrecisionTimer ( bNUseDoubleSystemFrameSize ),
-    ServerListManager ( iPortNumber,
-                        strDirectoryAddress,
-                        strServerListFileName,
-                        strServerInfo,
-                        strServerPublicIP,
-                        strServerListFilter,
-                        iNewMaxNumChan,
-                        bNEnableIPv6,
-                        &ConnLessProtocol ),
-    JamController ( this ),
-    bDisableRecording ( bDisableRecording ),
-    bAutoRunMinimized ( false ),
-    bDelayPan ( bNDelayPan ),
-    bEnableIPv6 ( bNEnableIPv6 ),
-    eLicenceType ( eNLicenceType ),
-    bDisconnectAllClientsOnQuit ( bNDisconnectAllClientsOnQuit ),
-    pSignalHandler ( CSignalHandler::getSingletonP() )
+// TODO
+CServer::CServer() :
+    Socket ( *this ),
+    HighPrecisionTimer ( AllOptions.fo_fastupdate.value ),
+    ServerListManager ( ConnLessProtocol ),
+    JamController ( this )
 {
-    int iOpusError;
-    int i;
+    int  iOpusError;
+    uint i;
 
     // create OPUS encoder/decoder for each channel (must be done before
     // enabling the channels), create a mono and stereo encoder/decoder
     // for each channel
-    for ( i = 0; i < iMaxNumChannels; i++ )
+    for ( i = 0; i < AllOptions.io_numchannels.value; i++ )
     {
         // init OPUS -----------------------------------------------------------
         OpusMode[i] = opus_custom_mode_create ( SYSTEM_SAMPLE_RATE_HZ, DOUBLE_SYSTEM_FRAME_SIZE_SAMPLES, &iOpusError );
@@ -133,7 +92,7 @@ CServer::CServer ( const int          iNewMaxNumChan,
     vstrChatColors[5] = "coral";
 
     // set the server frame size
-    if ( bUseDoubleSystemFrameSize )
+    if ( AllOptions.fo_fastupdate.value )
     {
         iServerFrameSizeSamples = DOUBLE_SYSTEM_FRAME_SIZE_SAMPLES;
     }
@@ -148,30 +107,30 @@ CServer::CServer ( const int          iNewMaxNumChan,
     // the worst case here:
 
     // allocate worst case memory for the temporary vectors
-    vecChanIDsCurConChan.Init ( iMaxNumChannels );
-    vecvecfGains.Init ( iMaxNumChannels );
-    vecvecfPannings.Init ( iMaxNumChannels );
-    vecvecsData.Init ( iMaxNumChannels );
-    vecvecsData2.Init ( iMaxNumChannels );
-    vecvecsSendData.Init ( iMaxNumChannels );
-    vecvecfIntermediateProcBuf.Init ( iMaxNumChannels );
-    vecvecbyCodedData.Init ( iMaxNumChannels );
-    vecNumAudioChannels.Init ( iMaxNumChannels );
-    vecNumFrameSizeConvBlocks.Init ( iMaxNumChannels );
-    vecUseDoubleSysFraSizeConvBuf.Init ( iMaxNumChannels );
-    vecAudioComprType.Init ( iMaxNumChannels );
+    vecChanIDsCurConChan.Init ( AllOptions.io_numchannels.toInt() );
+    vecvecfGains.Init ( AllOptions.io_numchannels.toInt() );
+    vecvecfPannings.Init ( AllOptions.io_numchannels.toInt() );
+    vecvecsData.Init ( AllOptions.io_numchannels.toInt() );
+    vecvecsData2.Init ( AllOptions.io_numchannels.toInt() );
+    vecvecsSendData.Init ( AllOptions.io_numchannels.toInt() );
+    vecvecfIntermediateProcBuf.Init ( AllOptions.io_numchannels.toInt() );
+    vecvecbyCodedData.Init ( AllOptions.io_numchannels.toInt() );
+    vecNumAudioChannels.Init ( AllOptions.io_numchannels.toInt() );
+    vecNumFrameSizeConvBlocks.Init ( AllOptions.io_numchannels.toInt() );
+    vecUseDoubleSysFraSizeConvBuf.Init ( AllOptions.io_numchannels.toInt() );
+    vecAudioComprType.Init ( AllOptions.io_numchannels.toInt() );
 
-    for ( i = 0; i < iMaxNumChannels; i++ )
+    for ( i = 0; i < AllOptions.io_numchannels.value; i++ )
     {
         // init vectors storing information of all channels
-        vecvecfGains[i].Init ( iMaxNumChannels );
-        vecvecfPannings[i].Init ( iMaxNumChannels );
+        vecvecfGains[i].Init ( AllOptions.io_numchannels.toInt() );
+        vecvecfPannings[i].Init ( AllOptions.io_numchannels.toInt() );
 
         // we always use stereo audio buffers (which is the worst case)
         vecvecsData[i].Init ( 2 /* stereo */ * DOUBLE_SYSTEM_FRAME_SIZE_SAMPLES /* worst case buffer size */ );
         vecvecsData2[i].Init ( 2 /* stereo */ * DOUBLE_SYSTEM_FRAME_SIZE_SAMPLES /* worst case buffer size */ );
 
-        // (note that we only allocate iMaxNumChannels buffers for the send
+        // (note that we only allocate allOptions.io_numchannels.value buffers for the send
         // and coded data because of the OMP implementation)
         vecvecsSendData[i].Init ( 2 /* stereo */ * DOUBLE_SYSTEM_FRAME_SIZE_SAMPLES /* worst case buffer size */ );
 
@@ -183,29 +142,25 @@ CServer::CServer ( const int          iNewMaxNumChan,
     }
 
     // allocate worst case memory for the channel levels
-    vecChannelLevels.Init ( iMaxNumChannels );
+    vecChannelLevels.Init ( AllOptions.io_numchannels.toInt() );
 
     // enable logging (if requested)
-    if ( !strLoggingFileName.isEmpty() )
+    if ( !AllOptions.so_logfile.value.isEmpty() )
     {
-        Logging.Start ( strLoggingFileName );
+        Logging.Start ( AllOptions.so_logfile.value );
     }
 
     // HTML status file writing
-    if ( !strServerHTMLFileListName.isEmpty() )
+    if ( !AllOptions.so_htmlstatus.value.isEmpty() )
     {
-        // activate HTML file writing and write initial file
-        bWriteStatusHTMLFile = true;
+        // attempt to activate HTML file writing and write initial file
         WriteHTMLChannelList();
     }
 
-    // manage welcome message: if the welcome message is a valid link to a local
-    // file, the content of that file is used as the welcome message (#361)
-    SetWelcomeMessage ( strNewWelcomeMessage ); // first use given text, may be overwritten
-
-    if ( QFileInfo ( strNewWelcomeMessage ).exists() )
+    // Manage the size of the welcome message supplied (either from file or directly)
+    if ( QFileInfo ( AllOptions.so_welcomemessage.value ).exists() )
     {
-        QFile file ( strNewWelcomeMessage );
+        QFile file ( AllOptions.so_welcomemessage.value );
 
         if ( file.open ( QIODevice::ReadOnly | QIODevice::Text ) )
         {
@@ -213,15 +168,19 @@ CServer::CServer ( const int          iNewMaxNumChan,
             SetWelcomeMessage ( file.readAll() );
         }
     }
+    else if ( !AllOptions.so_welcomemessage.value.isEmpty() )
+    {
+        SetWelcomeMessage ( AllOptions.so_welcomemessage.value );
+    }
 
     // enable jam recording (if requested) - kicks off the thread (note
     // that jam recorder needs the frame size which is given to the jam
     // recorder in the SetRecordingDir() function)
-    SetRecordingDir ( strRecordingDirName );
+    SetRecordingDir ( AllOptions.so_recording.value );
 
     // enable all channels (for the server all channel must be enabled the
     // entire life time of the software)
-    for ( i = 0; i < iMaxNumChannels; i++ )
+    for ( i = 0; i < AllOptions.io_numchannels.value; i++ )
     {
         vecChannels[i].SetEnable ( true );
         vecChannelOrder[i] = i;
@@ -230,12 +189,12 @@ CServer::CServer ( const int          iNewMaxNumChan,
     int iAvailableCores = QThread::idealThreadCount();
 
     // setup CThreadPool if multithreading is active and possible
-    if ( bUseMultithreading )
+    if ( AllOptions.fo_multithreading.value )
     {
         if ( iAvailableCores == 1 )
         {
-            qDebug() << "found only one core, disabling multithreading";
-            bUseMultithreading = false;
+            qDebug() << "found only one core, multithreading not enabled";
+            // allOptions.fo_multithreading.value = false;
         }
         else
         {
@@ -350,7 +309,7 @@ void CServer::CreateAndSendJitBufMessage ( const int iCurChanID, const int iNNum
 
 CServer::~CServer()
 {
-    for ( int i = 0; i < iMaxNumChannels; i++ )
+    for ( int i = 0; i < AllOptions.io_numchannels.value; i++ )
     {
         // free audio encoders and decoders
         opus_custom_encoder_destroy ( OpusEncoderMono[i] );
@@ -434,9 +393,10 @@ void CServer::OnNewConnection ( int iChID, int iTotChans, CHostAddress RecHostAd
     }
 
     // send licence request message (if enabled)
-    if ( eLicenceType != LT_NO_LICENCE )
+    if ( AllOptions.fo_licence.value )
     {
-        vecChannels[iChID].CreateLicReqMes ( eLicenceType );
+        // LT_CREATIVECOMMONS triggers the "Please read the chat window and agree" message in the client
+        vecChannels[iChID].CreateLicReqMes ( LT_CREATIVECOMMONS );
     }
 
     // send version info (for, e.g., feature activation in the client)
@@ -483,10 +443,10 @@ void CServer::OnCLDisconnection ( CHostAddress InetAddr )
 void CServer::OnAboutToQuit()
 {
     // if enabled, disconnect all clients on quit
-    if ( bDisconnectAllClientsOnQuit )
+    if ( AllOptions.fo_discononquit.value )
     {
         QMutexLocker locker ( &Mutex );
-        for ( int i = 0; i < iMaxNumChannels; i++ )
+        for ( int i = 0; i < AllOptions.io_numchannels.value; i++ )
         {
             if ( vecChannels[i].IsConnected() )
             {
@@ -587,7 +547,7 @@ void CServer::OnTimer()
         QMutexLocker locker ( &Mutex );
 
         // first, get number and IDs of connected channels
-        for ( int i = 0; i < iMaxNumChannels; i++ )
+        for ( int i = 0; i < AllOptions.io_numchannels.value; i++ )
         {
             if ( vecChannels[i].IsConnected() )
             {
@@ -602,7 +562,7 @@ void CServer::OnTimer()
 
         // use multithreading for any non-zero number of clients
         // (overhead is low and it is worth doing for all numbers)
-        bUseMT = bUseMultithreading && iNumClients > 0;
+        bUseMT = iMaxNumThreads > 1 && iNumClients > 0;
 
         // prepare and decode connected channels
         if ( !bUseMT )
@@ -708,7 +668,8 @@ void CServer::OnTimer()
             }
             Futures.clear();
         }
-        if ( bDelayPan )
+
+        if ( AllOptions.fo_delaypan.value )
         {
             for ( int i = 0; i < iNumClients; i++ )
             {
@@ -764,9 +725,9 @@ void CServer::DecodeReceiveData ( const int iChanCnt, const int iNumClients )
     vecAudioComprType[iChanCnt]   = vecChannels[iCurChanID].GetAudioCompressionType();
 
     // get info about required frame size conversion properties
-    vecUseDoubleSysFraSizeConvBuf[iChanCnt] = ( !bUseDoubleSystemFrameSize && ( vecAudioComprType[iChanCnt] == CT_OPUS ) );
+    vecUseDoubleSysFraSizeConvBuf[iChanCnt] = ( !AllOptions.fo_fastupdate.value && ( vecAudioComprType[iChanCnt] == CT_OPUS ) );
 
-    if ( bUseDoubleSystemFrameSize && ( vecAudioComprType[iChanCnt] == CT_OPUS64 ) )
+    if ( AllOptions.fo_fastupdate.value && ( vecAudioComprType[iChanCnt] == CT_OPUS64 ) )
     {
         vecNumFrameSizeConvBlocks[iChanCnt] = 2;
     }
@@ -989,35 +950,32 @@ void CServer::MixEncodeTransmitData ( const int iChanCnt, const int iNumClients 
         int iPanDelL = 0, iPanDelR = 0, iPanDel;
         int iLpan, iRpan, iPan;
 
-        for ( j = 0; j < iNumClients; j++ )
+        if ( AllOptions.fo_delaypan.value )
         {
-            // get a reference to the audio data and gain/pan of the current client
-            const CVector<int16_t>& vecsData  = vecvecsData[j];
-            const CVector<int16_t>& vecsData2 = vecvecsData2[j];
-
-            const float fGain = vecvecfGains[iChanCnt][j];
-            const float fPan  = bDelayPan ? 0.5f : vecvecfPannings[iChanCnt][j];
-
-            // calculate combined gain/pan for each stereo channel where we define
-            // the panning that center equals full gain for both channels
-            const float fGainL = MathUtils::GetLeftPan ( fPan, false ) * fGain;
-            const float fGainR = MathUtils::GetRightPan ( fPan, false ) * fGain;
-
-            if ( bDelayPan )
+            for ( j = 0; j < iNumClients; j++ )
             {
+                // get a reference to the audio data and gain/pan of the current client
+                const CVector<int16_t>& vecsData  = vecvecsData[j];
+                const CVector<int16_t>& vecsData2 = vecvecsData2[j];
+
+                const float fGain = vecvecfGains[iChanCnt][j];
+                const float fPan  = 0.5f;
+
+                // calculate combined gain/pan for each stereo channel where we define
+                // the panning that center equals full gain for both channels
+                const float fGainL = MathUtils::GetLeftPan ( fPan, false ) * fGain;
+                const float fGainR = MathUtils::GetRightPan ( fPan, false ) * fGain;
+
                 iPanDel  = lround ( (float) ( 2 * maxPanDelay - 2 ) * ( vecvecfPannings[iChanCnt][j] - 0.5f ) );
                 iPanDelL = ( iPanDel > 0 ) ? iPanDel : 0;
                 iPanDelR = ( iPanDel < 0 ) ? -iPanDel : 0;
-            }
 
-            if ( vecNumAudioChannels[j] == 1 )
-            {
-                // mono: copy same mono data in both out stereo audio channels
-                for ( i = 0, k = 0; i < iServerFrameSizeSamples; i++, k += 2 )
+                if ( vecNumAudioChannels[j] == 1 )
                 {
-                    // left/right channel
-                    if ( bDelayPan )
+                    // mono: copy same mono data in both out stereo audio channels
+                    for ( i = 0, k = 0; i < iServerFrameSizeSamples; i++, k += 2 )
                     {
+                        // left/right channel
                         // pan address shift
 
                         // left channel
@@ -1046,21 +1004,13 @@ void CServer::MixEncodeTransmitData ( const int iChanCnt, const int iNumClients 
                             vecfIntermProcBuf[k + 1] += vecsData[iRpan] * fGainR;
                         }
                     }
-                    else
-                    {
-                        vecfIntermProcBuf[k] += vecsData[i] * fGainL;
-                        vecfIntermProcBuf[k + 1] += vecsData[i] * fGainR;
-                    }
                 }
-            }
-            else
-            {
-                // stereo
-                for ( i = 0; i < ( 2 * iServerFrameSizeSamples ); i++ )
+                else
                 {
-                    // left/right channel
-                    if ( bDelayPan )
+                    // stereo
+                    for ( i = 0; i < ( 2 * iServerFrameSizeSamples ); i++ )
                     {
+                        // left/right channel
                         // pan address shift
                         if ( ( i & 1 ) == 0 )
                         {
@@ -1082,8 +1032,40 @@ void CServer::MixEncodeTransmitData ( const int iChanCnt, const int iNumClients 
                             vecfIntermProcBuf[i] += vecsData[iPan] * fGain;
                         }
                     }
-                    else
+                }
+            }
+        }
+        else
+        {
+            for ( j = 0; j < iNumClients; j++ )
+            {
+                // get a reference to the audio data and gain/pan of the current client
+                const CVector<int16_t>& vecsData = vecvecsData[j];
+
+                const float fGain = vecvecfGains[iChanCnt][j];
+                const float fPan  = vecvecfPannings[iChanCnt][j];
+
+                // calculate combined gain/pan for each stereo channel where we define
+                // the panning that center equals full gain for both channels
+                const float fGainL = MathUtils::GetLeftPan ( fPan, false ) * fGain;
+                const float fGainR = MathUtils::GetRightPan ( fPan, false ) * fGain;
+
+                if ( vecNumAudioChannels[j] == 1 )
+                {
+                    // mono: copy same mono data in both out stereo audio channels
+                    for ( i = 0, k = 0; i < iServerFrameSizeSamples; i++, k += 2 )
                     {
+                        // left/right channel
+                        vecfIntermProcBuf[k] += vecsData[i] * fGainL;
+                        vecfIntermProcBuf[k + 1] += vecsData[i] * fGainR;
+                    }
+                }
+                else
+                {
+                    // stereo
+                    for ( i = 0; i < ( 2 * iServerFrameSizeSamples ); i++ )
+                    {
+                        // left/right channel
                         if ( ( i & 1 ) == 0 )
                         {
                             // if even : left channel
@@ -1188,7 +1170,7 @@ CVector<CChannelInfo> CServer::CreateChannelList()
     CVector<CChannelInfo> vecChanInfo ( 0 );
 
     // look for free channels
-    for ( int i = 0; i < iMaxNumChannels; i++ )
+    for ( int i = 0; i < AllOptions.io_numchannels.value; i++ )
     {
         if ( vecChannels[i].IsConnected() )
         {
@@ -1206,7 +1188,7 @@ void CServer::CreateAndSendChanListForAllConChannels()
     CVector<CChannelInfo> vecChanInfo ( CreateChannelList() );
 
     // now send connected channels list to all connected clients
-    for ( int i = 0; i < iMaxNumChannels; i++ )
+    for ( int i = 0; i < AllOptions.io_numchannels.value; i++ )
     {
         if ( vecChannels[i].IsConnected() )
         {
@@ -1245,7 +1227,7 @@ void CServer::CreateAndSendChatTextForAllConChannels ( const int iCurChanID, con
                                          ChanName.toHtmlEscaped() + "</b></font> " + strChatText.toHtmlEscaped();
 
     // Send chat text to all connected clients ---------------------------------
-    for ( int i = 0; i < iMaxNumChannels; i++ )
+    for ( int i = 0; i < AllOptions.io_numchannels.value; i++ )
     {
         if ( vecChannels[i].IsConnected() )
         {
@@ -1261,7 +1243,7 @@ void CServer::CreateAndSendRecorderStateForAllConChannels()
     ERecorderState eRecorderState = JamController.GetRecorderState();
 
     // now send recorder state to all connected clients
-    for ( int i = 0; i < iMaxNumChannels; i++ )
+    for ( int i = 0; i < AllOptions.io_numchannels.value; i++ )
     {
         if ( vecChannels[i].IsConnected() )
         {
@@ -1287,13 +1269,15 @@ int CServer::GetNumberOfConnectedClients()
     return iCurNumChannels;
 }
 
-// CServer::FindChannel() is called for every received audio packet or connected protocol
-// packet, to find the channel ID associated with the source IP address and port.
-// In order to search as efficiently as possible, a list of active channel IDs is stored
-// in vecChannelOrder[], sorted by IP and port (according to CHostAddress::Compare()),
-// and a binary search is used to find either the existing channel, or the position at
-// which a new channel should be inserted.
-
+/**
+ * @brief Called for every received audio packet or connected protocol
+ * packet, to find the channel ID associated with the source IP address and port.
+ *
+ * In order to search as efficiently as possible, a list of active channel IDs is stored
+ * in vecChannelOrder[], sorted by IP and port (according to CHostAddress::Compare()),
+ * and a binary search is used to find either the existing channel, or the position at
+ * which a new channel should be inserted.
+ */
 int CServer::FindChannel ( const CHostAddress& CheckAddr, const bool bAllowNew )
 {
     int iNewChanID = INVALID_CHANNEL_ID;
@@ -1325,7 +1309,7 @@ int CServer::FindChannel ( const CHostAddress& CheckAddr, const bool bAllowNew )
     }
 
     // existing channel not found - return if we cannot create a new channel
-    if ( !bAllowNew || iCurNumChannels >= iMaxNumChannels )
+    if ( !bAllowNew || iCurNumChannels >= AllOptions.io_numchannels.value )
     {
         return INVALID_CHANNEL_ID;
     }
@@ -1360,7 +1344,7 @@ void CServer::InitChannel ( const int iNewChanID, const CHostAddress& InetAddr )
 
     // reset the channel gains/pans of current channel, at the same
     // time reset gains/pans of this channel ID for all other channels
-    for ( int i = 0; i < iMaxNumChannels; i++ )
+    for ( int i = 0; i < AllOptions.io_numchannels.value; i++ )
     {
         vecChannels[iNewChanID].SetGain ( i, 1.0 );
         vecChannels[iNewChanID].SetPan ( i, 0.5 );
@@ -1372,10 +1356,12 @@ void CServer::InitChannel ( const int iNewChanID, const CHostAddress& InetAddr )
     }
 }
 
-// CServer::FreeChannel() is called to remove a channel from the list of active channels.
-// The remaining ordered IDs are moved down by one space, and the freed ID is moved to the
-// end, ready to be reused by the next new connection.
-
+/**
+ * @brief Called to remove a channel from the list of active channels.
+ *
+ * The remaining ordered IDs are moved down by one space, and the freed ID is moved to the
+ * end, ready to be reused by the next new connection.
+ */
 void CServer::FreeChannel ( const int iCurChanID )
 {
     QMutexLocker locker ( &MutexChanOrder );
@@ -1388,7 +1374,7 @@ void CServer::FreeChannel ( const int iCurChanID )
 
             // move channel IDs down by one starting at the freed channel and working up the active channels
             // and then the free channels until its position in the free list is reached
-            while ( i < iCurNumChannels || ( i + 1 < iMaxNumChannels && vecChannelOrder[i + 1] < iCurChanID ) )
+            while ( i < iCurNumChannels || ( i + 1 < AllOptions.io_numchannels.value && vecChannelOrder[i + 1] < iCurChanID ) )
             {
                 int j              = i++;
                 vecChannelOrder[j] = vecChannelOrder[i];
@@ -1409,7 +1395,7 @@ void CServer::DumpChannels ( const QString& title )
 {
     qDebug() << qUtf8Printable ( title );
 
-    for ( int i = 0; i < iMaxNumChannels; i++ )
+    for ( int i = 0; i < AllOptions.io_numchannels.value; i++ )
     {
         int iChanID = vecChannelOrder[i];
 
@@ -1476,14 +1462,14 @@ void CServer::GetConCliParam ( CVector<CHostAddress>&     vecHostAddresses,
                                CVector<CChannelCoreInfo>& vecChanInfo )
 {
     // init return values
-    vecHostAddresses.Init ( iMaxNumChannels );
-    vecsName.Init ( iMaxNumChannels );
-    veciJitBufNumFrames.Init ( iMaxNumChannels );
-    veciNetwFrameSizeFact.Init ( iMaxNumChannels );
-    vecChanInfo.Init ( iMaxNumChannels );
+    vecHostAddresses.Init ( AllOptions.io_numchannels.toInt() );
+    vecsName.Init ( AllOptions.io_numchannels.toInt() );
+    veciJitBufNumFrames.Init ( AllOptions.io_numchannels.toInt() );
+    veciNetwFrameSizeFact.Init ( AllOptions.io_numchannels.toInt() );
+    vecChanInfo.Init ( AllOptions.io_numchannels.toInt() );
 
     // check all possible channels
-    for ( int i = 0; i < iMaxNumChannels; i++ )
+    for ( uint i = 0; i < AllOptions.io_numchannels.value; i++ )
     {
         if ( vecChannels[i].IsConnected() )
         {
@@ -1502,7 +1488,7 @@ void CServer::SetEnableRecording ( bool bNewEnableRecording )
     JamController.SetEnableRecording ( bNewEnableRecording, IsRunning() );
 
     // not dependent upon JamController state
-    bDisableRecording = !bNewEnableRecording;
+    AllOptions.fo_norecord.value = !bNewEnableRecording;
 
     // the recording state may have changed, send recording state message
     CreateAndSendRecorderStateForAllConChannels();
@@ -1512,19 +1498,20 @@ void CServer::SetWelcomeMessage ( const QString& strNWelcMess )
 {
     // we need a mutex to secure access
     QMutexLocker locker ( &MutexWelcomeMessage );
-    strWelcomeMessage = strNWelcMess;
 
     // restrict welcome message to maximum allowed length
-    strWelcomeMessage = strWelcomeMessage.left ( MAX_LEN_CHAT_TEXT );
+    strWelcomeMessage = strNWelcMess.left ( MAX_LEN_CHAT_TEXT );
 }
 
 void CServer::WriteHTMLChannelList()
 {
     // prepare file and stream
-    QFile serverFileListFile ( strServerHTMLFileListName );
+    QFile serverFileListFile ( AllOptions.so_htmlstatus.value );
 
     if ( serverFileListFile.open ( QIODevice::WriteOnly | QIODevice::Text ) )
     {
+        bWriteStatusHTMLFile = true;
+
         QTextStream streamFileOut ( &serverFileListFile );
 
         // depending on number of connected clients write list
@@ -1538,7 +1525,7 @@ void CServer::WriteHTMLChannelList()
             streamFileOut << "<ul>\n";
 
             // write entry for each connected client
-            for ( int i = 0; i < iMaxNumChannels; i++ )
+            for ( int i = 0; i < AllOptions.io_numchannels.value; i++ )
             {
                 if ( vecChannels[i].IsConnected() )
                 {
@@ -1554,7 +1541,7 @@ void CServer::WriteHTMLChannelList()
 void CServer::WriteHTMLServerQuit()
 {
     // prepare file and stream
-    QFile serverFileListFile ( strServerHTMLFileListName );
+    QFile serverFileListFile ( AllOptions.so_htmlstatus.value );
 
     if ( !serverFileListFile.open ( QIODevice::WriteOnly | QIODevice::Text ) )
     {
@@ -1613,7 +1600,7 @@ bool CServer::CreateLevelsForAllConChannels ( const int                       iN
     // increment the frame counter needed for low frequency update trigger
     iFrameCount++;
 
-    if ( bUseDoubleSystemFrameSize )
+    if ( AllOptions.fo_fastupdate.value )
     {
         // additional increment needed for double frame size to get to the same time interval
         iFrameCount++;

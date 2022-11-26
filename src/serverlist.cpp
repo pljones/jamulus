@@ -120,66 +120,10 @@ QString CServerListEntry::toCSV()
 }
 
 // --- CServerListManager ---
-CServerListManager::CServerListManager ( const quint16  iNPortNum,
-                                         const QString& sNDirectoryAddress,
-                                         const QString& strServerListFileName,
-                                         const QString& strServerInfo,
-                                         const QString& strServerListFilter,
-                                         const QString& strServerPublicIP,
-                                         const int      iNumChannels,
-                                         const bool     bNEnableIPv6,
-                                         CProtocol*     pNConLProt ) :
-    DirectoryType ( AT_NONE ),
-    bEnableIPv6 ( bNEnableIPv6 ),
-    ServerListFileName ( strServerListFileName ),
-    strDirectoryAddress ( "" ),
-    bIsDirectory ( false ),
-    eSvrRegStatus ( SRS_NOT_REGISTERED ),
-    strMinServerVersion ( "" ), // disable version check with empty version
-    pConnLessProtocol ( pNConLProt ),
-    iSvrRegRetries ( 0 )
+CServerListManager::CServerListManager ( CProtocol& CLProtocol ) : pConnLessProtocol ( &CLProtocol )
 {
-
-    CHostAddress haServerAddr ( NetworkUtil::GetLocalAddress().InetAddr, iNPortNum );
-
-    // set the server internal address, including internal port number
-    QHostAddress qhaServerPublicIP;
-
-    if ( strServerPublicIP == "" )
-    {
-        // No user-supplied override via --serverpublicip -> use auto-detection
-        qhaServerPublicIP = haServerAddr.InetAddr;
-    }
-    else
-    {
-        // User-supplied --serverpublicip
-        qhaServerPublicIP = QHostAddress ( strServerPublicIP );
-    }
-    qDebug() << "Using" << qhaServerPublicIP.toString() << "as external IP.";
-    ServerPublicIP = CHostAddress ( qhaServerPublicIP, iNPortNum );
-
-    if ( bEnableIPv6 )
-    {
-        // set the server internal address, including internal port number
-        QHostAddress qhaServerPublicIP6;
-
-        qhaServerPublicIP6 = NetworkUtil::GetLocalAddress6().InetAddr;
-        qDebug() << "Using" << qhaServerPublicIP6.toString() << "as external IPv6.";
-        ServerPublicIP6 = CHostAddress ( qhaServerPublicIP6, iNPortNum );
-    }
-
-    // prepare the server info information
-    QStringList slServInfoSeparateParams;
-    int         iServInfoNumSplitItems = 0;
-
-    if ( !strServerInfo.isEmpty() )
-    {
-        // split the different parameter strings
-        slServInfoSeparateParams = strServerInfo.split ( ";" );
-
-        // get the number of items in the split list
-        iServInfoNumSplitItems = slServInfoSeparateParams.count();
-    }
+    // clear the list
+    ServerList.clear();
 
     /*
      * Init server list entry (server info for this server) with defaults.
@@ -190,7 +134,42 @@ CServerListManager::CServerListManager ( const quint16  iNPortNum,
      *
      * If we are a directory, we assume that we are a permanent server.
      */
-    CServerListEntry ThisServerListEntry ( haServerAddr, ServerPublicIP, "", QLocale::system().country(), "", iNumChannels, bIsDirectory );
+
+    // per definition, the very first entry is this server and will never be deleted
+    ServerList.append ( CServerListEntry() );
+
+    // set the local address for the server -> use auto-detection
+    ServerList[0].LHostAddr = CHostAddress ( NetworkUtil::GetLocalAddress().InetAddr, static_cast<quint16> ( AllOptions.io_port.value ) );
+    qDebug() << "Using" << ServerList[0].LHostAddr.InetAddr.toString() << "as local IP.";
+
+    // set the server public address (use internal port number)
+    QHostAddress qhaServerPublicIP;
+
+    if ( AllOptions.so_serverpublicip.value == "" )
+    {
+        // No user-supplied override via --serverpublicip
+        qhaServerPublicIP = ServerList[0].LHostAddr.InetAddr;
+    }
+    else
+    {
+        // User-supplied --serverpublicip
+        qhaServerPublicIP = QHostAddress ( AllOptions.so_serverpublicip.value );
+    }
+    ServerList[0].HostAddr = CHostAddress ( qhaServerPublicIP, static_cast<quint16> ( AllOptions.io_port.value ) );
+    qDebug() << "Using" << ServerList[0].HostAddr.InetAddr.toString() << "as external IP.";
+
+    // prepare the server info information
+    QStringList slServInfoSeparateParams;
+    int         iServInfoNumSplitItems = 0;
+
+    if ( !AllOptions.so_serverinfo.value.isEmpty() )
+    {
+        // split the different parameter strings
+        slServInfoSeparateParams = AllOptions.so_serverinfo.value.split ( ";" );
+
+        // get the number of items in the split list
+        iServInfoNumSplitItems = slServInfoSeparateParams.count();
+    }
 
     // parse the server info string according to definition:
     // [this server name];[this server city];[this server country as QLocale ID] (; ... ignored)
@@ -198,10 +177,10 @@ CServerListManager::CServerListManager ( const quint16  iNPortNum,
     if ( iServInfoNumSplitItems >= 3 )
     {
         // [this server name]
-        ThisServerListEntry.strName = slServInfoSeparateParams[0].left ( MAX_LEN_SERVER_NAME );
+        ServerList[0].strName = slServInfoSeparateParams[0].left ( MAX_LEN_SERVER_NAME );
 
         // [this server city]
-        ThisServerListEntry.strCity = slServInfoSeparateParams[1].left ( MAX_LEN_SERVER_CITY );
+        ServerList[0].strCity = slServInfoSeparateParams[1].left ( MAX_LEN_SERVER_CITY );
 
         // [this server country as QLocale ID]
         bool      ok;
@@ -216,7 +195,7 @@ CServerListManager::CServerListManager ( const quint16  iNPortNum,
                 // We try to do such conversions at the outer-most interface which is capable of doing it.
                 // Although the value comes from src/main -> src/server, this very place is
                 // the first where we have access to the parsed country code:
-                ThisServerListEntry.eCountry = CLocale::WireFormatCountryCodeToQtCountry ( iCountry );
+                ServerList[0].eCountry = CLocale::WireFormatCountryCodeToQtCountry ( iCountry );
             }
         }
         else
@@ -224,67 +203,72 @@ CServerListManager::CServerListManager ( const quint16  iNPortNum,
             QLocale::Country qlCountry = CLocale::GetCountryCodeByTwoLetterCode ( slServInfoSeparateParams[2] );
             if ( qlCountry != QLocale::AnyCountry )
             {
-                ThisServerListEntry.eCountry = qlCountry;
+                ServerList[0].eCountry = qlCountry;
             }
         }
         qInfo() << qUtf8Printable ( QString ( "Using server info: name = \"%1\", city = \"%2\", country/region = \"%3\" (%4)" )
-                                        .arg ( ThisServerListEntry.strName )
-                                        .arg ( ThisServerListEntry.strCity )
+                                        .arg ( ServerList[0].strName )
+                                        .arg ( ServerList[0].strCity )
                                         .arg ( slServInfoSeparateParams[2] )
-                                        .arg ( QLocale::countryToString ( ThisServerListEntry.eCountry ) ) );
+                                        .arg ( QLocale::countryToString ( ServerList[0].eCountry ) ) );
     }
 
-    // per definition, the very first entry is this server and this entry will
-    // never be deleted
-    ServerList.clear();
-
-    // per definition, the first entry in the server list is the own server
-    ServerList.append ( ThisServerListEntry );
-
-    // set the directory address - not the type, that gets done by app start up
-    SetDirectoryAddress ( sNDirectoryAddress );
-
-    // whitelist parsing - only used when bIsDirectory
-    if ( !strServerListFilter.isEmpty() )
+    if ( AllOptions.fo_ipv6.value )
     {
-        // split the different parameter strings
-        QStringList  slWhitelistAddresses = strServerListFilter.split ( ";" );
-        QHostAddress CurWhiteListAddress;
+        // set the server internal address, including internal port number
+        QHostAddress qhaServerPublicIP6;
 
-        for ( int iIdx = 0; iIdx < slWhitelistAddresses.size(); iIdx++ )
+        qhaServerPublicIP6 = NetworkUtil::GetLocalAddress6().InetAddr;
+        qDebug() << "Using" << qhaServerPublicIP6.toString() << "as external IPv6.";
+        ServerPublicIP6 = CHostAddress ( qhaServerPublicIP6, static_cast<quint16> ( AllOptions.io_port.value ) );
+    }
+
+    // server list filter parsing - only used when bIsADirectory
+    // ideally strMinServerVersion would not be hidden in the list filter
+    CVector<QString>& vecListFilter = AllOptions.vs_serverlistfilter.value;
+    for ( size_t iIdx = 0; iIdx < vecListFilter.size(); iIdx++ )
+    {
+        QString& entry = vecListFilter.at ( iIdx );
+
+        // check for special case: [version]
+        if ( ( entry.length() > 2 ) && ( entry.left ( 1 ) == "[" ) && ( entry.right ( 1 ) == "]" ) )
         {
-            // check for special case: [version]
-            if ( ( slWhitelistAddresses.at ( iIdx ).length() > 2 ) && ( slWhitelistAddresses.at ( iIdx ).left ( 1 ) == "[" ) &&
-                 ( slWhitelistAddresses.at ( iIdx ).right ( 1 ) == "]" ) )
+            strMinServerVersion = entry.mid ( 1, entry.length() - 2 );
+        }
+        else
+        {
+            QHostAddress haCurAddress;
+            if ( haCurAddress.setAddress ( entry ) )
             {
-                strMinServerVersion = slWhitelistAddresses.at ( iIdx ).mid ( 1, slWhitelistAddresses.at ( iIdx ).length() - 2 );
-            }
-            else if ( CurWhiteListAddress.setAddress ( slWhitelistAddresses.at ( iIdx ) ) )
-            {
-                vWhiteList << CurWhiteListAddress;
+                vListFilter << haCurAddress;
             }
         }
     }
 
-    // assume directoryType will get set to AT_CUSTOM
-    if ( !strDirectoryAddress.compare ( "localhost", Qt::CaseInsensitive ) || !strDirectoryAddress.compare ( "127.0.0.1" ) )
+    // store the directory address even if we're not registering - DirectoryType is AT_NONE currently
+    SetDirectoryAddress ( AllOptions.so_directory.value );
+
+    // now set the directory type - this may trigger registration or turn this server into a directory
+    SetDirectoryType ( static_cast<EDirectoryType> ( AllOptions.io_directorytype.value ), true );
+
+    // if this server is now a directory, log the effective filter
+    if ( bIsADirectory )
     {
         if ( !strMinServerVersion.isEmpty() )
         {
             qInfo() << "Registering servers must be version" << strMinServerVersion << "or later.";
         }
-        if ( !vWhiteList.isEmpty() )
+        if ( !vListFilter.isEmpty() )
         {
-            qInfo() << "Directory registration white list active.  Only the following addresses can register:";
-            foreach ( QHostAddress hostAddress, vWhiteList )
+            qInfo() << "Directory registration server list filter active.  Only the following addresses can register:";
+            foreach ( QHostAddress hostAddress, vListFilter )
             {
                 qInfo() << "  -" << hostAddress.toString();
             }
         }
     }
 
-    // prepare the one shot timer for determining if this is a
-    // permanent registered server
+    // prepare the one shot timer for determining if this is a permanent registered server
     TimerIsPermanent.setSingleShot ( true );
     TimerIsPermanent.setInterval ( SERVLIST_TIME_PERMSERV_MINUTES * 60000 );
 
@@ -342,15 +326,15 @@ void CServerListManager::SetServerCountry ( const QLocale::Country eNewCountry )
 void CServerListManager::SetDirectoryAddress ( const QString sNDirectoryAddress )
 {
     // if the address has not actually changed, do nothing
-    if ( sNDirectoryAddress == strDirectoryAddress )
+    if ( sNDirectoryAddress == AllOptions.so_directory.value )
     {
         return;
     }
 
-    if ( DirectoryType != AT_CUSTOM )
+    if ( static_cast<EDirectoryType> ( AllOptions.io_directorytype.value ) != AT_CUSTOM )
     {
         // just save the new name
-        strDirectoryAddress = sNDirectoryAddress;
+        AllOptions.so_directory.value = sNDirectoryAddress;
         return;
     }
 
@@ -360,9 +344,9 @@ void CServerListManager::SetDirectoryAddress ( const QString sNDirectoryAddress 
     QMutexLocker locker ( &Mutex );
 
     // now save the new name
-    strDirectoryAddress = sNDirectoryAddress;
+    AllOptions.so_directory.value = sNDirectoryAddress;
 
-    SetIsDirectory();
+    SetIsADirectory();
 
     locker.unlock();
 
@@ -370,10 +354,10 @@ void CServerListManager::SetDirectoryAddress ( const QString sNDirectoryAddress 
     Register();
 }
 
-void CServerListManager::SetDirectoryType ( const EDirectoryType eNCSAT )
+void CServerListManager::SetDirectoryType ( const EDirectoryType eNCSAT, bool force )
 {
     // if the directory type is not changing, do nothing
-    if ( eNCSAT == DirectoryType )
+    if ( !force && eNCSAT == static_cast<EDirectoryType> ( AllOptions.io_directorytype.value ) )
     {
         return;
     }
@@ -384,9 +368,9 @@ void CServerListManager::SetDirectoryType ( const EDirectoryType eNCSAT )
     QMutexLocker locker ( &Mutex );
 
     // now update the server type
-    DirectoryType = eNCSAT;
+    AllOptions.io_directorytype.value = static_cast<qint64> ( eNCSAT );
 
-    SetIsDirectory();
+    SetIsADirectory();
 
     locker.unlock();
 
@@ -394,31 +378,34 @@ void CServerListManager::SetDirectoryType ( const EDirectoryType eNCSAT )
     Register();
 }
 
-void CServerListManager::SetIsDirectory()
+void CServerListManager::SetIsADirectory()
 {
-    // this is called with the lock set
 
     // per definition: If we are registered and the directory
     // is the localhost address, we are in directory mode.
-    bool bNIsDirectory = DirectoryType == AT_CUSTOM &&
-                         ( !strDirectoryAddress.compare ( "localhost", Qt::CaseInsensitive ) || !strDirectoryAddress.compare ( "127.0.0.1" ) );
+    bool bNIsDirectory =
+        static_cast<EDirectoryType> ( AllOptions.io_directorytype.value ) == AT_CUSTOM &&
+        ( !AllOptions.so_directory.value.compare ( "localhost", Qt::CaseInsensitive ) || !AllOptions.so_directory.value.compare ( "127.0.0.1" ) );
 
-    if ( bIsDirectory == bNIsDirectory )
+    if ( bIsADirectory == bNIsDirectory )
     {
         return;
     }
 
-    bIsDirectory = bNIsDirectory;
+    bIsADirectory = bNIsDirectory;
 
-    if ( bIsDirectory )
+    if ( bIsADirectory )
     {
-        qInfo() << qUtf8Printable ( tr ( "Now a directory" ) );
+        // regardless of how long the app has actually been running, directories are permanent
+        ServerList[0].bPermanentOnline = true;
+
+        qInfo() << "Now a directory";
         // Load any persistent server list (create it if it is not there)
         (void) Load();
     }
     else
     {
-        qInfo() << qUtf8Printable ( tr ( "No longer a directory" ) );
+        qInfo() << "No longer a directory";
     }
 }
 
@@ -426,7 +413,9 @@ void CServerListManager::SetIsDirectory()
 void CServerListManager::Unregister()
 {
     // if not currently registered, nothing needs doing
-    if ( DirectoryType == AT_NONE || ( DirectoryType == AT_CUSTOM && strDirectoryAddress.isEmpty() ) || eSvrRegStatus == SRS_NOT_REGISTERED )
+    if ( static_cast<EDirectoryType> ( AllOptions.io_directorytype.value ) == AT_NONE ||
+         ( static_cast<EDirectoryType> ( AllOptions.io_directorytype.value ) == AT_CUSTOM && AllOptions.so_directory.value.isEmpty() ) ||
+         eSvrRegStatus == SRS_NOT_REGISTERED )
     {
         return;
     }
@@ -438,7 +427,7 @@ void CServerListManager::Unregister()
     QMutexLocker locker ( &Mutex );
 
     // disable service -> stop timer
-    if ( bIsDirectory )
+    if ( bIsADirectory )
     {
         TimerPollList.stop();
         TimerPingServerInList.stop();
@@ -457,7 +446,9 @@ void CServerListManager::Unregister()
 void CServerListManager::Register()
 {
     // if cannot currently register, or we have registered, nothing needs doing
-    if ( DirectoryType == AT_NONE || ( DirectoryType == AT_CUSTOM && strDirectoryAddress.isEmpty() ) || eSvrRegStatus == SRS_REGISTERED )
+    if ( static_cast<EDirectoryType> ( AllOptions.io_directorytype.value ) == AT_NONE ||
+         ( static_cast<EDirectoryType> ( AllOptions.io_directorytype.value ) == AT_CUSTOM && AllOptions.so_directory.value.isEmpty() ) ||
+         eSvrRegStatus == SRS_REGISTERED )
     {
         // there are edge cases during registration...
         // maybe ! ( SRS_NOT_REGISTERED || SRS_BAD_ADDRESS )
@@ -470,7 +461,7 @@ void CServerListManager::Register()
     // this is called without the lock set
     QMutexLocker locker ( &Mutex );
 
-    if ( bIsDirectory )
+    if ( bIsADirectory )
     {
         // start timer for polling the server list if enabled
         // 1 minute = 60 * 1000 ms
@@ -556,7 +547,7 @@ void CServerListManager::Append ( const CHostAddress&    InetAddr,
                                   const CServerCoreInfo& ServerInfo,
                                   const QString          strVersion )
 {
-    if ( bIsDirectory )
+    if ( bIsADirectory )
     {
         // if the client IP address is a private one, it's on the same LAN as the directory
         bool serverIsExternal = !NetworkUtil::IsPrivateNetworkIP ( InetAddr.InetAddr );
@@ -580,11 +571,11 @@ void CServerListManager::Append ( const CHostAddress&    InetAddr,
 #endif
         }
 
-        // check for whitelist (it is enabled if it is not empty per definition)
-        if ( !vWhiteList.empty() )
+        // check for server list filter (it is enabled if it is not empty per definition)
+        if ( !vListFilter.empty() )
         {
             // if the server is not listed, refuse registration and send registration response
-            if ( !vWhiteList.contains ( InetAddr.InetAddr ) )
+            if ( !vListFilter.contains ( InetAddr.InetAddr ) )
             {
                 pConnLessProtocol->CreateCLRegisterServerResp ( InetAddr, SRR_NOT_FULFILL_REQIREMENTS );
                 return; // leave function early, i.e., we do not register this server
@@ -633,7 +624,7 @@ void CServerListManager::Append ( const CHostAddress&    InetAddr,
 
 void CServerListManager::Remove ( const CHostAddress& InetAddr )
 {
-    if ( bIsDirectory )
+    if ( bIsADirectory )
     {
         qInfo() << qUtf8Printable ( QString ( "Requested to unregister entry for %1" ).arg ( InetAddr.toString() ) );
 
@@ -667,7 +658,7 @@ void CServerListManager::RetrieveAll ( const CHostAddress& InetAddr )
 {
     QMutexLocker locker ( &Mutex );
 
-    if ( bIsDirectory )
+    if ( bIsADirectory )
     {
         // if the client IP address is a private one, it's on the same LAN as the directory
         bool clientIsInternal = NetworkUtil::IsPrivateNetworkIP ( InetAddr.InetAddr );
@@ -692,7 +683,7 @@ void CServerListManager::RetrieveAll ( const CHostAddress& InetAddr )
 
         // copy the list (we have to copy it since the message requires a vector but the list is actually stored in a QList object
         // and not in a vector object)
-        for ( int iIdx = 1; iIdx < iCurServerListSize; iIdx++ )
+        for ( ushort iIdx = 1; iIdx < iCurServerListSize; iIdx++ )
         {
             // copy list item
             CServerInfo& siCurListEntry = vecServerInfo[iIdx] = ServerList[iIdx];
@@ -748,18 +739,18 @@ bool CServerListManager::SetServerListFileName ( QString strFilename )
 {
     QMutexLocker locker ( &Mutex );
 
-    if ( ServerListFileName == strFilename )
+    if ( AllOptions.so_serverlistfile.value == strFilename )
     {
         return true;
     }
 
-    if ( !ServerListFileName.isEmpty() )
+    if ( !AllOptions.so_serverlistfile.value.isEmpty() )
     {
         // Save once to the old filename
         Save();
     }
 
-    ServerListFileName = strFilename;
+    AllOptions.so_serverlistfile.value = strFilename;
     return Load();
 }
 
@@ -767,24 +758,24 @@ bool CServerListManager::Load()
 {
     // this is called with the lock set
 
-    if ( !bIsDirectory || ServerListFileName.isEmpty() )
+    if ( !bIsADirectory || AllOptions.so_serverlistfile.value.isEmpty() )
     {
         // this gets called again if either of the above change
         return true;
     }
 
-    QFile file ( ServerListFileName );
+    QFile file ( AllOptions.so_serverlistfile.value );
 
     if ( !file.open ( QIODevice::ReadWrite | QIODevice::Text ) )
     {
-        qWarning() << qUtf8Printable ( QString ( tr ( "Could not open '%1' for read/write. "
-                                                      "Please check that %2 has permission (and that there is free space)." ) )
-                                           .arg ( ServerListFileName )
-                                           .arg ( APP_NAME ) );
-        ServerListFileName.clear();
+        qWarning() << qUtf8Printable (
+            QString ( "Could not open '%1' for read/write.  Please check that %2 has permission (and that there is free space)." )
+                .arg ( AllOptions.so_serverlistfile.value )
+                .arg ( APP_NAME ) );
+        AllOptions.so_serverlistfile.value.clear();
         return false;
     }
-    qInfo() << qUtf8Printable ( QString ( tr ( "Loading persistent server list file: %1" ) ).arg ( ServerListFileName ) );
+    qInfo() << "Loading persistent server list file:" << AllOptions.so_serverlistfile.value;
 
     // do not lose our entry
     CServerListEntry serverListEntry = ServerList[0];
@@ -805,7 +796,7 @@ bool CServerListManager::Load()
             continue;
         }
 
-        NetworkUtil::ParseNetworkAddress ( slLine[0], haServerHostAddr, bEnableIPv6 );
+        NetworkUtil::ParseNetworkAddress ( slLine[0], haServerHostAddr, AllOptions.fo_ipv6.value );
         int iIdx = IndexOf ( haServerHostAddr );
         if ( iIdx != INVALID_INDEX )
         {
@@ -813,8 +804,14 @@ bool CServerListManager::Load()
             continue;
         }
 
-        serverListEntry =
-            CServerListEntry::parse ( slLine[0], slLine[1], slLine[2], slLine[3], slLine[4], slLine[5], slLine[6].toInt() != 0, bEnableIPv6 );
+        serverListEntry = CServerListEntry::parse ( slLine[0],
+                                                    slLine[1],
+                                                    slLine[2],
+                                                    slLine[3],
+                                                    slLine[4],
+                                                    slLine[5],
+                                                    slLine[6].toInt() != 0,
+                                                    AllOptions.fo_ipv6.value );
 
         // We expect servers to have addresses...
         if ( ( CHostAddress() == serverListEntry.HostAddr ) )
@@ -837,18 +834,18 @@ void CServerListManager::Save()
 {
     // this is called with the lock set
 
-    if ( ServerListFileName.isEmpty() )
+    if ( AllOptions.so_serverlistfile.value.isEmpty() )
     {
         return;
     }
 
-    QFile file ( ServerListFileName );
+    QFile file ( AllOptions.so_serverlistfile.value );
 
     if ( !file.open ( QIODevice::WriteOnly | QIODevice::Truncate | QIODevice::Text ) )
     {
         // Not a useable file
-        qWarning() << qUtf8Printable ( QString ( tr ( "Could not write to '%1'" ) ).arg ( ServerListFileName ) );
-        ServerListFileName.clear();
+        qWarning() << QString ( tr ( "Could not write to '%1'" ) ).arg ( AllOptions.so_serverlistfile.value );
+        AllOptions.so_serverlistfile.value.clear();
 
         return;
     }
@@ -962,7 +959,7 @@ void CServerListManager::SetRegistered ( const bool bIsRegister )
         return;
     }
 
-    if ( bIsDirectory )
+    if ( bIsADirectory )
     {
         // this IS the directory, no network message to worry about
         SetSvrRegStatus ( bIsRegister ? SRS_REGISTERED : SRS_NOT_REGISTERED );
@@ -974,8 +971,9 @@ void CServerListManager::SetRegistered ( const bool bIsRegister )
     // it is an URL of a dynamic IP address, the IP address might have
     // changed in the meanwhile.
     // Allow IPv4 only for communicating with Directories
-    const QString strNetworkAddress      = NetworkUtil::GetDirectoryAddress ( DirectoryType, strDirectoryAddress );
-    const bool    bDirectoryAddressValid = NetworkUtil().ParseNetworkAddress ( strNetworkAddress, DirectoryAddress, false );
+    const QString strNetworkAddress =
+        NetworkUtil::GetDirectoryAddress ( static_cast<EDirectoryType> ( AllOptions.io_directorytype.value ), AllOptions.so_directory.value );
+    const bool bDirectoryAddressValid = NetworkUtil().ParseNetworkAddress ( strNetworkAddress, DirectoryAddress, false );
 
     if ( bIsRegister )
     {

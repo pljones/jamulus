@@ -374,16 +374,20 @@ FORMS_GUI = src/aboutdlgbase.ui \
         src/connectdlgbase.ui
 }
 
+contains(CONFIG, "legacy_settings") {
+    HEADERS += src/settings.h
+}
+
 HEADERS += src/buffer.h \
     src/channel.h \
     src/global.h \
+    src/options.h \
     src/protocol.h \
     src/recorder/jamcontroller.h \
     src/threadpool.h \
     src/server.h \
     src/serverlist.h \
     src/serverlogging.h \
-    src/settings.h \
     src/socket.h \
     src/util.h \
     src/recorder/jamrecorder.h \
@@ -482,15 +486,19 @@ HEADERS_OPUS_X86 = libs/opus/celt/x86/celt_lpc_sse.h \
     libs/opus/celt/x86/x86cpu.h \
     $$files(libs/opus/silk/x86/*.h)
 
+contains(CONFIG, "legacy_settings") {
+    SOURCES += src/settings.cpp
+}
+
 SOURCES += src/buffer.cpp \
     src/channel.cpp \
     src/main.cpp \
+    src/options.cpp \
     src/protocol.cpp \
     src/recorder/jamcontroller.cpp \
     src/server.cpp \
     src/serverlist.cpp \
     src/serverlogging.cpp \
-    src/settings.cpp \
     src/signalhandler.cpp \
     src/socket.cpp \
     src/util.cpp \
@@ -690,6 +698,7 @@ DISTFILES += ChangeLog \
     COMPILING.md \
     COPYING \
     CONTRIBUTING.md \
+    Next-Big-Thing \
     README.md \
     SECURITY.md \
     docs/JAMULUS_PROTOCOL.md \

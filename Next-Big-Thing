@@ -1,0 +1,149 @@
+Pretty much done - just have to finish tidying everything up...
+
+
+
+My next "big task" is to rewrite options processing
+- Create a settings object with defaults
+- If we're running the GUI, load the ini file into the settings object
+- If we're the client without a GUI, override from the command line (or do it anyway, preferably); if we're the server, override from the command line; validating options as we go
+- Create client or server, passing the settings object (only)
+- Start
+(currently, it's attempting to validate the command line without knowing the inifile content and the inifile can't be loaded without the client or server object - all backwards...)
+(Volker didn't like the idea...)
+
+
+
+Client
+======
+
+                            CSound
+                               ^
+                               |
+CChannelInfo <- CChannel <- CClient -> CClientSettings
+                   |           |  ^
+                   v           |   \____         v__ (Dialogs: Chat, ClientSettings, Connect, Licence, About)
+                CSocket        v        CClientDlg__
+                           CProtocol             ^   CAudioMixerBoard <- (Slots, Faders)
+
+
+
+Server
+======
+
+                           CProtocol
+                CSocket        ^    ____CServerDlg <- (various dialogs)
+                   ^           |   /
+                   |           |  v
+CChannelInfo <- CChannel <- CServer -> CServerSettings
+                            /     \
+                           v       v
+                   ServerList     Recorder
+
+
+There's currently a _serious_ design flaw in the client:
+- the GUI is _required_ in order to handle mute/solo settings
+- CClient doesn't hold a channel "fader" level - it just communicates the server mixer level required
+- "mute" and "solo" need to know the level before it was set to zero, to restore it
+- this is currently done by reading the GUI widget value!!
+- this _breaks_ things like the MIDI control of mute/solo (and any other remote control ideas)
+- there are various other things where the client design needs addressing (much of the mixer board doesn't use CClient values)
+
+
+Command Line Only options
+=========================
+- settings file location (inifile)
+- server rather than client (server)
+
+Common Settings
+===============
+- socket settings: IPv4 state, IPv6 state (enableipv6), bound interface address(es), port, QoS
+
+Common Dialog Settings
+======================
+- Use GUI (nogui)
+- language (notranslation)
+- per dialog common: visible, last location
+
+Client Settings
+===============
+Client
+ - MIDI setup (ctrlmidich)
+ - Feedback protection
+ - new client level
+ - clientname
+Client Channel Info
+ - "profile"
+ - mixer channel info - identity, fader, pan, mute, solo; how many?
+Client Network State
+ - auto-connect to server (connect)
+ - jitter buffer settings - auto, manual local, manual server
+ - network buffer size - "small" or not
+Client Audio State
+ - auto-connect to driver (nojackconnect) -- why is this JACK-specific?
+ - device selection
+ - selected ins/outs -- should we store multiple settings, per device?
+ - audio buffer size
+ - channels - mono, mono in/stereo out, stereo
+ - quality
+ - mute myself (mutestream)
+ - ignore my server return (mutemyown) -- can we deprecate this?
+ - input balance
+ - input boost
+ - reverb
+ - reverb channel (L/R)
+
+Client also controls Client Dialog settings.
+
+Client Dialog Settings
+======================
+Main dialog
+ - skin
+ - mixer rows
+ - meter style
+Connect dialog
+ - custom directories
+ - (manual) server name
+ - show all servers (showallservers)
+Analyser dialog (showanalyzerconsole)
+
+Server Settings
+===============
+Server
+ - disconnect clients on quit (discononquit)
+ - network buffer size (fastupdate)
+ - "log" file
+ - "htmlstatus" file
+ - server chat message on new client connection (welcomemessage)
+ - "licence" popup,
+ - multithreading
+ - use delay panning (delaypan)
+ - maximum number of client channels (numchannels)
+ServerList
+ - registration details for this server (serverinfo)
+ - registering server public IP address (serverpublicip)
+ - server address for directory in which to register (if any) (directoryserver)
+ - server list persistence file (directoryfile)
+ - server registration filter (listfilter)
+Recorder
+ - recording directory (recording)
+ - disable recording by default (norecord)
+Server Socket
+ - bound interface address(es) (serverbindip) -- why is this server only?
+Server Dialog Settings (if enabled)
+ - Start minimized
+
+
+----
+
+QCommandLineParser parser;
+parser.setSingleDashWordOptionMode(ParseAsCompactedShortOptions);
+
+parser.addHelpOption()
+parser.addVersionOption()
+
+parser.addOptions({
+  ...
+  , {{ ... names ... }, tr ( description ), tr ( valueName )="", defaultValue="" }
+    ?.setFlags( QCommandLineOption::HiddenFromHelp )?
+  ...
+});

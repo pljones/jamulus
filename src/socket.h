@@ -24,10 +24,11 @@
 
 #pragma once
 
+#include <iostream>
+#include <vector>
 #include <QObject>
 #include <QThread>
 #include <QMutex>
-#include <vector>
 #include "global.h"
 #include "protocol.h"
 #include "util.h"
@@ -53,8 +54,8 @@ class CSocket : public QObject
     Q_OBJECT
 
 public:
-    CSocket ( CChannel* pNewChannel, const quint16 iPortNumber, const quint16 iQosNumber, const QString& strServerBindIP, bool bEnableIPv6 );
-    CSocket ( CServer* pNServP, const quint16 iPortNumber, const quint16 iQosNumber, const QString& strServerBindIP, bool bEnableIPv6 );
+    CSocket ( CChannel& Channel );
+    CSocket ( CServer& Server );
 
     virtual ~CSocket();
 
@@ -64,10 +65,7 @@ public:
     void Close();
 
 protected:
-    void    Init ( const quint16 iPortNumber, const quint16 iQosNumber, const QString& strServerBindIP );
-    quint16 iPortNumber;
-    quint16 iQosNumber;
-    QString strServerBindIP;
+    void Init();
 
 #ifdef _WIN32
     SOCKET UdpSocket;
@@ -87,9 +85,7 @@ protected:
 
     bool bIsClient;
 
-    bool bJitterBufferOK;
-
-    bool bEnableIPv6;
+    bool bJitterBufferOK = true;
 
 public:
     void OnDataReceived();
@@ -119,23 +115,9 @@ class CHighPrioSocket : public QObject
     Q_OBJECT
 
 public:
-    CHighPrioSocket ( CChannel* pNewChannel, const quint16 iPortNumber, const quint16 iQosNumber, const QString& strServerBindIP, bool bEnableIPv6 ) :
-        Socket ( pNewChannel, iPortNumber, iQosNumber, strServerBindIP, bEnableIPv6 )
-    {
-        Init();
-    }
+    CHighPrioSocket ( CChannel& Channel ) : Socket ( Channel ) { Init(); }
 
-    CHighPrioSocket ( CChannel* pNewChannel, const quint16 iPortNumber, const quint16 iQosNumber, bool bEnableIPv6 ) :
-        Socket ( pNewChannel, iPortNumber, iQosNumber, "", bEnableIPv6 )
-    {
-        Init();
-    }
-
-    CHighPrioSocket ( CServer* pNewServer, const quint16 iPortNumber, const quint16 iQosNumber, const QString& strServerBindIP, bool bEnableIPv6 ) :
-        Socket ( pNewServer, iPortNumber, iQosNumber, strServerBindIP, bEnableIPv6 )
-    {
-        Init();
-    }
+    CHighPrioSocket ( CServer& Server ) : Socket ( Server ) { Init(); }
 
     virtual ~CHighPrioSocket() { NetworkWorkerThread.Stop(); }
 

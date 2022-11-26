@@ -44,20 +44,10 @@ class CSettings : public QObject
     Q_OBJECT
 
 public:
-    CSettings() :
-        vecWindowPosMain(), // empty array
-        strLanguage ( "" ),
-        strFileName ( "" )
-    {
-        QObject::connect ( QCoreApplication::instance(), &QCoreApplication::aboutToQuit, this, &CSettings::OnAboutToQuit );
-    }
+    CSettings() { QObject::connect ( QCoreApplication::instance(), &QCoreApplication::aboutToQuit, this, &CSettings::OnAboutToQuit ); }
 
     void Load ( const QList<QString>& CommandLineOptions );
     void Save();
-
-    // common settings
-    QByteArray vecWindowPosMain;
-    QString    strLanguage;
 
 protected:
     virtual void WriteSettingsToXML ( QDomDocument& IniXMLDocument )                                                  = 0;
@@ -72,16 +62,9 @@ protected:
     // The following functions implement the conversion from the general string
     // to base64 (which should be used for binary data in XML files). This
     // enables arbitrary utf8 characters to be used as the names in the GUI.
-    //
-    // ATTENTION: The "FromBase64[...]" functions must be used with caution!
-    //            The reason is that if the FromBase64ToByteArray() is used to
-    //            assign the stored value to a QString, this is incorrect but
-    //            will not generate a compile error since there is a default
-    //            conversion available for QByteArray to QString.
-    QString    ToBase64 ( const QByteArray strIn ) const { return QString::fromLatin1 ( strIn.toBase64() ); }
-    QString    ToBase64 ( const QString strIn ) const { return ToBase64 ( strIn.toUtf8() ); }
-    QByteArray FromBase64ToByteArray ( const QString strIn ) const { return QByteArray::fromBase64 ( strIn.toLatin1() ); }
-    QString    FromBase64ToString ( const QString strIn ) const { return QString::fromUtf8 ( FromBase64ToByteArray ( strIn ) ); }
+    // (Only needed for VectorOption<QString>.)
+    QString ToBase64 ( const QString strIn ) const { return QString::fromLatin1 ( strIn.toUtf8().toBase64() ); }
+    QString FromBase64 ( const QString strIn ) const { return QString::fromUtf8 ( QByteArray::fromBase64 ( strIn.toLatin1() ) ); }
 
     // init file access function for read/write
     void SetNumericIniSet ( QDomDocument& xmlFile, const QString& strSection, const QString& strKey, const int iValue = 0 );
@@ -102,7 +85,7 @@ protected:
 
     void PutIniSetting ( QDomDocument& xmlFile, const QString& sSection, const QString& sKey, const QString& sValue = "" );
 
-    QString strFileName;
+    QString strFileName = "";
 
 public slots:
     void OnAboutToQuit() { Save(); }
@@ -112,91 +95,27 @@ public slots:
 class CClientSettings : public CSettings
 {
 public:
-    CClientSettings ( CClient* pNCliP, const QString& sNFiName ) :
-        CSettings(),
-        vecStoredFaderTags ( MAX_NUM_STORED_FADER_SETTINGS, "" ),
-        vecStoredFaderLevels ( MAX_NUM_STORED_FADER_SETTINGS, AUD_MIX_FADER_MAX ),
-        vecStoredPanValues ( MAX_NUM_STORED_FADER_SETTINGS, AUD_MIX_PAN_MAX / 2 ),
-        vecStoredFaderIsSolo ( MAX_NUM_STORED_FADER_SETTINGS, false ),
-        vecStoredFaderIsMute ( MAX_NUM_STORED_FADER_SETTINGS, false ),
-        vecStoredFaderGroupID ( MAX_NUM_STORED_FADER_SETTINGS, INVALID_INDEX ),
-        vstrIPAddress ( MAX_NUM_SERVER_ADDR_ITEMS, "" ),
-        iNewClientFaderLevel ( 100 ),
-        iInputBoost ( 1 ),
-        iSettingsTab ( SETTING_TAB_AUDIONET ),
-        bConnectDlgShowAllMusicians ( true ),
-        eChannelSortType ( ST_NO_SORT ),
-        iNumMixerPanelRows ( 1 ),
-        vstrDirectoryAddress ( MAX_NUM_SERVER_ADDR_ITEMS, "" ),
-        eDirectoryType ( AT_DEFAULT ),
-        bEnableFeedbackDetection ( true ),
-        bEnableAudioAlerts ( false ),
-        vecWindowPosSettings(), // empty array
-        vecWindowPosChat(),     // empty array
-        vecWindowPosConnect(),  // empty array
-        bWindowWasShownSettings ( false ),
-        bWindowWasShownChat ( false ),
-        bWindowWasShownConnect ( false ),
-        bOwnFaderFirst ( false ),
-        pClient ( pNCliP )
-    {
-        SetFileName ( sNFiName, DEFAULT_INI_FILE_NAME );
-    }
+    CClientSettings ( const QString& sNFiName ) : CSettings() { SetFileName ( sNFiName, DEFAULT_INI_FILE_NAME ); }
 
     void LoadFaderSettings ( const QString& strCurFileName );
     void SaveFaderSettings ( const QString& strCurFileName );
 
-    // general settings
-    CVector<QString> vecStoredFaderTags;
-    CVector<int>     vecStoredFaderLevels;
-    CVector<int>     vecStoredPanValues;
-    CVector<int>     vecStoredFaderIsSolo;
-    CVector<int>     vecStoredFaderIsMute;
-    CVector<int>     vecStoredFaderGroupID;
-    CVector<QString> vstrIPAddress;
-    int              iNewClientFaderLevel;
-    int              iInputBoost;
-    int              iSettingsTab;
-    bool             bConnectDlgShowAllMusicians;
-    EChSortType      eChannelSortType;
-    int              iNumMixerPanelRows;
-    CVector<QString> vstrDirectoryAddress;
-    EDirectoryType   eDirectoryType;
-    int              iCustomDirectoryIndex; // index of selected custom directory
-    bool             bEnableFeedbackDetection;
-    bool             bEnableAudioAlerts;
-
-    // window position/state settings
-    QByteArray vecWindowPosSettings;
-    QByteArray vecWindowPosChat;
-    QByteArray vecWindowPosConnect;
-    bool       bWindowWasShownSettings;
-    bool       bWindowWasShownChat;
-    bool       bWindowWasShownConnect;
-    bool       bOwnFaderFirst;
-
 protected:
+    // No CommandLineOptions used when reading Client inifile
     virtual void WriteSettingsToXML ( QDomDocument& IniXMLDocument ) override;
     virtual void ReadSettingsFromXML ( const QDomDocument& IniXMLDocument, const QList<QString>& ) override;
 
     void ReadFaderSettingsFromXML ( const QDomDocument& IniXMLDocument );
     void WriteFaderSettingsToXML ( QDomDocument& IniXMLDocument );
-
-    CClient* pClient;
 };
 #endif
 
 class CServerSettings : public CSettings
 {
 public:
-    CServerSettings ( CServer* pNSerP, const QString& sNFiName ) : CSettings(), pServer ( pNSerP )
-    {
-        SetFileName ( sNFiName, DEFAULT_INI_FILE_NAME_SERVER );
-    }
+    CServerSettings ( const QString& sNFiName ) : CSettings() { SetFileName ( sNFiName, DEFAULT_INI_FILE_NAME_SERVER ); }
 
 protected:
     virtual void WriteSettingsToXML ( QDomDocument& IniXMLDocument ) override;
-    virtual void ReadSettingsFromXML ( const QDomDocument& IniXMLDocument, const QList<QString>& CommandLineOptions ) override;
-
-    CServer* pServer;
+    virtual void ReadSettingsFromXML ( const QDomDocument& IniXMLDocument, const QList<QString>& ) override;
 };

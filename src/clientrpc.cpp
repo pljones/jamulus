@@ -122,21 +122,20 @@ CClientRpc::CClientRpc ( CClient* pClient, CRpcServer* pRpcServer, QObject* pare
     /// @rpc_method jamulusclient/getChannelInfo
     /// @brief Returns the client's profile information.
     /// @param {object} params - No parameters (empty object).
-    /// @result {number} result.id - The channel ID.
+    /// @result {number} result.id - The channel ID - not present in client profile.
     /// @result {string} result.name - The musician’s name.
-    /// @result {string} result.skillLevel - The musician’s skill level (beginner, intermediate, expert, or null).
     /// @result {number} result.countryId - The musician’s country ID (see QLocale::Country).
     /// @result {string} result.city - The musician’s city.
     /// @result {number} result.instrumentId - The musician’s instrument ID (see CInstPictures::GetTable).
-    /// @result {string} result.skillLevel - Your skill level (beginner, intermediate, expert, or null).
+    /// @result {string} result.skillLevel - The musician’s skill level (beginner, intermediate, expert, or null).
     pRpcServer->HandleMethod ( "jamulusclient/getChannelInfo", [=] ( const QJsonObject& params, QJsonObject& response ) {
         QJsonObject result{
             // TODO: We cannot include "id" here is pClient->ChannelInfo is a CChannelCoreInfo which lacks that field.
-            { "name", pClient->ChannelInfo.strName },
-            { "countryId", pClient->ChannelInfo.eCountry },
-            { "city", pClient->ChannelInfo.strCity },
-            { "instrumentId", pClient->ChannelInfo.iInstrument },
-            { "skillLevel", SerializeSkillLevel ( pClient->ChannelInfo.eSkillLevel ) },
+            { "name", pClient->GetChannelName() },
+            { "countryId", pClient->GetChannelCountry() },
+            { "city", pClient->GetChannelCity() },
+            { "instrumentId", pClient->GetChannelInstrument() },
+            { "skillLevel", SerializeSkillLevel ( pClient->GetChannelSkillLevel() ) },
         };
         response["result"] = result;
         Q_UNUSED ( params );
@@ -172,8 +171,7 @@ CClientRpc::CClientRpc ( CClient* pClient, CRpcServer* pRpcServer, QObject* pare
             return;
         }
 
-        pClient->ChannelInfo.strName = TruncateString ( jsonName.toString(), MAX_LEN_FADER_TAG );
-        pClient->SetRemoteInfo();
+        pClient->SetChannelName ( TruncateString ( jsonName.toString(), MAX_LEN_FADER_TAG ) );
 
         response["result"] = "ok";
     } );
@@ -186,8 +184,7 @@ CClientRpc::CClientRpc ( CClient* pClient, CRpcServer* pRpcServer, QObject* pare
         auto jsonSkillLevel = params["skillLevel"];
         if ( jsonSkillLevel.isNull() )
         {
-            pClient->ChannelInfo.eSkillLevel = SL_NOT_SET;
-            pClient->SetRemoteInfo();
+            pClient->SetChannelSkillLevel ( SL_NOT_SET );
             return;
         }
 
@@ -200,15 +197,15 @@ CClientRpc::CClientRpc ( CClient* pClient, CRpcServer* pRpcServer, QObject* pare
         auto strSkillLevel = jsonSkillLevel.toString();
         if ( strSkillLevel == "beginner" )
         {
-            pClient->ChannelInfo.eSkillLevel = SL_BEGINNER;
+            pClient->SetChannelSkillLevel ( SL_BEGINNER );
         }
         else if ( strSkillLevel == "intermediate" )
         {
-            pClient->ChannelInfo.eSkillLevel = SL_INTERMEDIATE;
+            pClient->SetChannelSkillLevel ( SL_INTERMEDIATE );
         }
         else if ( strSkillLevel == "expert" )
         {
-            pClient->ChannelInfo.eSkillLevel = SL_PROFESSIONAL;
+            pClient->SetChannelSkillLevel ( SL_PROFESSIONAL );
         }
         else
         {
@@ -217,7 +214,6 @@ CClientRpc::CClientRpc ( CClient* pClient, CRpcServer* pRpcServer, QObject* pare
             return;
         }
 
-        pClient->SetRemoteInfo();
         response["result"] = "ok";
     } );
 

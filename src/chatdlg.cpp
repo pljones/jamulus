@@ -25,7 +25,9 @@
 #include "chatdlg.h"
 
 /* Implementation *************************************************************/
-CChatDlg::CChatDlg ( QWidget* parent ) : CBaseDlg ( parent, Qt::Window ) // use Qt::Window to get min/max window buttons
+CChatDlg::CChatDlg ( CClient& client, QWidget* parent ) :
+    CBaseDlg ( parent, Qt::Window ), // use Qt::Window to get min/max window buttons
+    Client ( client )
 {
     setupUi ( this );
 
@@ -110,6 +112,14 @@ void CChatDlg::AddChatText ( QString strChatText )
 {
     // notify accessibility plugin that text has changed
     QAccessible::updateAccessibility ( new QAccessibleValueChangeEvent ( txvChatWindow, strChatText ) );
+
+    // if accessibility audio alerts are enabled, issue the new message alert
+    if ( Client.IsAudioAlertsActive() )
+    {
+        QSoundEffect* sf = new QSoundEffect();
+        sf->setSource ( QUrl::fromLocalFile ( ":sounds/res/sounds/new_message.wav" ) );
+        sf->play();
+    }
 
     // analyze strChatText to check if hyperlink (limit ourselves to http(s)://) but do not
     // replace the hyperlinks if any HTML code for a hyperlink was found (the user has done the HTML

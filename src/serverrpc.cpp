@@ -127,8 +127,9 @@ CServerRpc::CServerRpc ( CServer* pServer, CRpcServer* pRpcServer, QObject* pare
     pRpcServer->HandleMethod ( "jamulusserver/getServerProfile", [=] ( const QJsonObject& params, QJsonObject& response ) {
         QString dsName = "";
 
-        if ( AT_NONE != pServer->GetDirectoryType() )
-            dsName = NetworkUtil::GetDirectoryAddress ( pServer->GetDirectoryType(), pServer->GetDirectoryAddress() );
+        if ( AT_NONE != static_cast<EDirectoryType> ( AllOptions.io_directorytype.value ) )
+            dsName =
+                NetworkUtil::GetDirectoryAddress ( static_cast<EDirectoryType> ( AllOptions.io_directorytype.value ), AllOptions.so_directory.value );
 
         QJsonObject result{
             { "name", pServer->GetServerName() },

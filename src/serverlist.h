@@ -73,6 +73,7 @@ Note: this mechanism will not work in a private network.
 #endif
 #include "global.h"
 #include "util.h"
+#include "options.h"
 #include "protocol.h"
 
 /* Classes ********************************************************************/
@@ -133,34 +134,26 @@ class CServerListManager : public QObject
     Q_OBJECT
 
 public:
-    CServerListManager ( const quint16  iNPortNum,
-                         const QString& sNDirectoryAddress,
-                         const QString& strServerListFileName,
-                         const QString& strServerInfo,
-                         const QString& strServerListFilter,
-                         const QString& strServerPublicIP,
-                         const int      iNumChannels,
-                         const bool     bNEnableIPv6,
-                         CProtocol*     pNConLProt );
+    CServerListManager ( CProtocol& CLProtocol );
 
-    void    SetServerName ( const QString& strNewName );
-    QString GetServerName() { return ServerList[0].strName; }
+    void           SetServerName ( const QString& strNewName );
+    inline QString GetServerName() const { return ServerList[0].strName; }
 
-    void    SetServerCity ( const QString& strNewCity );
-    QString GetServerCity() { return ServerList[0].strCity; }
+    void           SetServerCity ( const QString& strNewCity );
+    inline QString GetServerCity() const { return ServerList[0].strCity; }
 
-    void             SetServerCountry ( const QLocale::Country eNewCountry );
-    QLocale::Country GetServerCountry() { return ServerList[0].eCountry; }
+    void                    SetServerCountry ( const QLocale::Country eNewCountry );
+    inline QLocale::Country GetServerCountry() const { return ServerList[0].eCountry; }
 
-    void    SetDirectoryAddress ( const QString sNDirectoryAddress );
-    QString GetDirectoryAddress() { return strDirectoryAddress; }
+    inline QString GetDirectoryAddress() const { return AllOptions.so_directory.value; }
+    void           SetDirectoryAddress ( const QString sNDirectoryAddress );
 
-    void           SetDirectoryType ( const EDirectoryType eNCSAT );
-    EDirectoryType GetDirectoryType() { return DirectoryType; }
+    inline EDirectoryType GetDirectoryType() const { return static_cast<EDirectoryType> ( AllOptions.io_directorytype.value ); }
+    void                  SetDirectoryType ( const EDirectoryType eNCSAT, bool force = false );
 
-    bool IsDirectory() const { return bIsDirectory; }
+    bool IsADirectory() const { return bIsADirectory; }
 
-    ESvrRegStatus GetSvrRegStatus() { return eSvrRegStatus; }
+    inline ESvrRegStatus GetSvrRegStatus() const { return eSvrRegStatus; }
 
     // the update has to be called if any change to the server list
     // properties was done
@@ -172,11 +165,14 @@ public:
 
     void StoreRegistrationResult ( ESvrRegResult eStatus );
 
-    QString GetServerListFileName() { return ServerListFileName; }
-    bool    SetServerListFileName ( QString strFilename );
+    inline QString GetServerListFileName() const { return AllOptions.so_serverlistfile.value; }
+    bool           SetServerListFileName ( const QString strFilename );
+
+signals:
+    void SvrRegStatusChanged();
 
 protected:
-    void SetIsDirectory();
+    void SetIsADirectory();
     void Unregister();
     void Register();
     void SetRegistered ( bool bIsRegister );
@@ -186,30 +182,23 @@ protected:
     void Save();
     void SetSvrRegStatus ( ESvrRegStatus eNSvrRegStatus );
 
+    CProtocol* pConnLessProtocol;
+
     QMutex Mutex;
 
-    CHostAddress   DirectoryAddress;
-    EDirectoryType DirectoryType;
+    CHostAddress DirectoryAddress;
 
-    bool bEnableIPv6;
-
-    CHostAddress ServerPublicIP;
     CHostAddress ServerPublicIP6;
-
-    QString ServerListFileName;
 
     QList<CServerListEntry> ServerList;
 
-    QString strDirectoryAddress;
-    bool    bIsDirectory;
+    bool bIsADirectory = false;
 
     // server registration status
-    ESvrRegStatus eSvrRegStatus;
+    ESvrRegStatus eSvrRegStatus = SRS_NOT_REGISTERED;
 
-    QList<QHostAddress> vWhiteList;
-    QString             strMinServerVersion;
-
-    CProtocol* pConnLessProtocol;
+    QList<QHostAddress> vListFilter;
+    QString             strMinServerVersion = ""; // defaults to disabled with empty version
 
     // count of registration retries
     int iSvrRegRetries;
@@ -221,7 +210,7 @@ protected:
     QTimer TimerCLRegisterServerResp;
     QTimer TimerIsPermanent;
 
-public slots:
+protected slots:
     void OnTimerPollList();
     void OnTimerPingServerInList();
     void OnTimerPingServers();
@@ -230,7 +219,4 @@ public slots:
     void OnTimerIsPermanent() { ServerList[0].bPermanentOnline = true; }
 
     void OnAboutToQuit();
-
-signals:
-    void SvrRegStatusChanged();
 };

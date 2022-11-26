@@ -25,9 +25,9 @@
 #include "analyzerconsole.h"
 
 // Analyzer console implementation *********************************************
-CAnalyzerConsole::CAnalyzerConsole ( CClient* pNCliP, QWidget* parent ) :
+CAnalyzerConsole::CAnalyzerConsole ( CClient& client, QWidget* parent ) :
     CBaseDlg ( parent, Qt::Window ), // use Qt::Window to get min/max window buttons
-    pClient ( pNCliP ),
+    Client ( client ),
     GraphImage ( 1, 1, QImage::Format_RGB32 ),
     GraphErrRateCanvasRect ( 0, 0, 600, 450 ), // defines total size of graph
     iGridFrameOffset ( 10 ),
@@ -122,7 +122,7 @@ void CAnalyzerConsole::DrawErrorRateTrace()
     double          dLimit;
     double          dMaxUpLimit;
 
-    pClient->GetBufErrorRates ( vecButErrorRates, dLimit, dMaxUpLimit );
+    Client.GetBufErrorRates ( vecButErrorRates, dLimit, dMaxUpLimit );
 
     // get the number of data elements
     const int iNumBuffers = vecButErrorRates.Size();

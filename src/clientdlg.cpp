@@ -24,211 +24,390 @@
 
 #include "clientdlg.h"
 
+/*
+
+    For each widget:
+
+        set the widget translation strings (any label and the actual control)
+
+        set the widget value to the client value
+
+        connect [Qt Widget]->onSomeSignal to
+            (lambda)(if the widget value != the client value, set the client value to the widget value)
+
+        connect Client->onSomeSignal to
+            (lambda)(if the widget value != the client value, set the widget value to the client value)
+
+        connect [Qt Widget]->onSomeOtherSignal to
+            method that runs multiple steps (load / save settings, etc) or is used in more than one place (connect), etc...
+
+*/
+
 /* Implementation *************************************************************/
-CClientDlg::CClientDlg ( CClient*         pNCliP,
-                         CClientSettings* pNSetP,
-                         const QString&   strConnOnStartupAddress,
-                         const QString&   strMIDISetup,
-                         const bool       bNewShowComplRegConnList,
-                         const bool       bShowAnalyzerConsole,
-                         const bool       bMuteStream,
-                         const bool       bNEnableIPv6,
-                         QWidget*         parent ) :
-    CBaseDlg ( parent, Qt::Window ), // use Qt::Window to get min/max window buttons
-    pClient ( pNCliP ),
-    pSettings ( pNSetP ),
-    bConnectDlgWasShown ( false ),
-    bDetectFeedback ( false ),
-    bEnableIPv6 ( bNEnableIPv6 ),
-    eLastRecorderState ( RS_UNDEFINED ), // for SetMixerBoardDeco
-    eLastDesign ( GD_ORIGINAL ),         //          "
-    ClientSettingsDlg ( pNCliP, pNSetP, parent ),
-    ChatDlg ( parent ),
-    ConnectDlg ( pNSetP, bNewShowComplRegConnList, parent ),
-    AnalyzerConsole ( pNCliP, parent )
+CClientDlg::CClientDlg ( CClient& client, QWidget* parent ) :
+    CBaseDlg ( parent, Qt::Window ),
+    ClientSettingsDlg ( client, parent ),
+    ChatDlg ( client, parent ),
+    ConnectDlg ( client, parent ), // TODO: Something is wrong in here
+    AnalyzerConsole ( client, parent ),
+    Client ( client )
 {
+    // auto-generated - always call this:
     setupUi ( this );
 
-    // Add help text to controls -----------------------------------------------
-    // input level meter
-    QString strInpLevH = "<b>" + tr ( "Input Level Meter" ) + ":</b> " +
-                         tr ( "This shows "
-                              "the level of the two stereo channels "
-                              "for your audio input." ) +
-                         "<br>" +
-                         tr ( "Make sure not to clip the input signal to avoid distortions of the "
-                              "audio signal." );
+    // There appears to be no way to initialise this when the instance gets constructed
+    // so do it here
+    MainMixerBoard->SetClient ( &Client );
 
-    QString strInpLevHTT = tr ( "If the application "
-                                "is connected to a server and "
-                                "you play your instrument/sing into the microphone, the VU "
-                                "meter should flicker. If this is not the case, you have "
-                                "probably selected the wrong input channel (e.g. 'line in' instead "
-                                "of the microphone input) or set the input gain too low in the "
-                                "(Windows) audio mixer." ) +
-                           "<br>" +
-                           tr ( "For proper usage of the "
-                                "application, you should not hear your singing/instrument through "
-                                "the loudspeaker or your headphone when the software is not connected. "
-                                "This can be achieved by muting your input audio channel in the "
-                                "Playback mixer (not the Recording mixer!)." ) +
-                           TOOLTIP_COM_END_TEXT;
-
-    QString strInpLevHAccText  = tr ( "Input level meter" );
-    QString strInpLevHAccDescr = tr ( "Simulates an analog LED level meter." );
-
-    lblInputLEDMeter->setWhatsThis ( strInpLevH );
-    lblLevelMeterLeft->setWhatsThis ( strInpLevH );
-    lblLevelMeterRight->setWhatsThis ( strInpLevH );
-    lbrInputLevelL->setWhatsThis ( strInpLevH );
-    lbrInputLevelL->setAccessibleName ( strInpLevHAccText );
-    lbrInputLevelL->setAccessibleDescription ( strInpLevHAccDescr );
-    lbrInputLevelL->setToolTip ( strInpLevHTT );
-    lbrInputLevelL->setEnabled ( false );
-    lbrInputLevelR->setWhatsThis ( strInpLevH );
-    lbrInputLevelR->setAccessibleName ( strInpLevHAccText );
-    lbrInputLevelR->setAccessibleDescription ( strInpLevHAccDescr );
-    lbrInputLevelR->setToolTip ( strInpLevHTT );
-    lbrInputLevelR->setEnabled ( false );
-
-    // connect/disconnect button
-    butConnect->setWhatsThis ( "<b>" + tr ( "Connect/Disconnect Button" ) + ":</b> " +
-                               tr ( "Opens a dialog where you can select a server to connect to. "
-                                    "If you are connected, pressing this button will end the session." ) );
-
-    butConnect->setAccessibleName ( tr ( "Connect and disconnect toggle button" ) );
-
-    // reverberation level
-    QString strAudReverb = "<b>" + tr ( "Reverb effect" ) + ":</b> " +
-                           tr ( "Reverb can be applied to one local mono audio channel or to both "
-                                "channels in stereo mode. The mono channel selection and the "
-                                "reverb level can be modified. For example, if "
-                                "a microphone signal is fed in to the right audio channel of the "
-                                "sound card and a reverb effect needs to be applied, set the "
-                                "channel selector to right and move the fader upwards until the "
-                                "desired reverb level is reached." );
-
-    lblAudioReverb->setWhatsThis ( strAudReverb );
-    sldAudioReverb->setWhatsThis ( strAudReverb );
-
-    sldAudioReverb->setAccessibleName ( tr ( "Reverb effect level setting" ) );
-
-    // reverberation channel selection
-    QString strRevChanSel = "<b>" + tr ( "Reverb Channel Selection" ) + ":</b> " +
-                            tr ( "With these radio buttons the audio input channel on which the "
-                                 "reverb effect is applied can be chosen. Either the left "
-                                 "or right input channel can be selected." );
-
-    rbtReverbSelL->setWhatsThis ( strRevChanSel );
-    rbtReverbSelL->setAccessibleName ( tr ( "Left channel selection for reverb" ) );
-    rbtReverbSelR->setWhatsThis ( strRevChanSel );
-    rbtReverbSelR->setAccessibleName ( tr ( "Right channel selection for reverb" ) );
-
-    // delay LED
-    QString strLEDDelay = "<b>" + tr ( "Delay Status LED" ) + ":</b> " + tr ( "Shows the current audio delay status:" ) +
-                          "<ul>"
-                          "<li>"
-                          "<b>" +
-                          tr ( "Green" ) + ":</b> " +
-                          tr ( "The delay is perfect for a jam "
-                               "session." ) +
-                          "</li>"
-                          "<li>"
-                          "<b>" +
-                          tr ( "Yellow" ) + ":</b> " +
-                          tr ( "A session is still possible "
-                               "but it may be harder to play." ) +
-                          "</li>"
-                          "<li>"
-                          "<b>" +
-                          tr ( "Red" ) + ":</b> " +
-                          tr ( "The delay is too large for "
-                               "jamming." ) +
-                          "</li>"
-                          "</ul>";
-
-    lblDelay->setWhatsThis ( strLEDDelay );
-    ledDelay->setWhatsThis ( strLEDDelay );
-    ledDelay->setToolTip ( tr ( "If this LED indicator turns red, "
-                                "you will not have much fun using %1." )
-                               .arg ( APP_NAME ) +
-                           TOOLTIP_COM_END_TEXT );
-
-    ledDelay->setAccessibleName ( tr ( "Delay status LED indicator" ) );
-
-    // buffers LED
-    QString strLEDBuffers = "<b>" + tr ( "Local Jitter Buffer Status LED" ) + ":</b> " +
-                            tr ( "The local jitter buffer status LED shows the current audio/streaming "
-                                 "status. If the light is red, the audio stream is interrupted. "
-                                 "This is caused by one of the following problems:" ) +
-                            "<ul>"
-                            "<li>" +
-                            tr ( "The network jitter buffer is not large enough for the current "
-                                 "network/audio interface jitter." ) +
-                            "</li>"
-                            "<li>" +
-                            tr ( "The sound card's buffer delay (buffer size) is too small "
-                                 "(see Settings window)." ) +
-                            "</li>"
-                            "<li>" +
-                            tr ( "The upload or download stream rate is too high for your "
-                                 "internet bandwidth." ) +
-                            "</li>"
-                            "<li>" +
-                            tr ( "The CPU of the client or server is at 100%." ) +
-                            "</li>"
-                            "</ul>";
-
-    lblBuffers->setWhatsThis ( strLEDBuffers );
-    ledBuffers->setWhatsThis ( strLEDBuffers );
-    ledBuffers->setToolTip ( tr ( "If this LED indicator turns red, "
-                                  "the audio stream is interrupted." ) +
-                             TOOLTIP_COM_END_TEXT );
-
-    ledBuffers->setAccessibleName ( tr ( "Local Jitter Buffer status LED indicator" ) );
-
-    // current connection status details
-    QString strConnStats = "<b>" + tr ( "Current Connection Status" ) + ":</b> " +
-                           tr ( "The Ping Time is the time required for the audio "
-                                "stream to travel from the client to the server and back again. This "
-                                "delay is introduced by the network and should be about "
-                                "20-30 ms. If this delay is higher than about 50 ms, your distance to "
-                                "the server is too large or your internet connection is not "
-                                "sufficient." ) +
-                           "<br>" +
-                           tr ( "Overall Delay is calculated from the current Ping Time and the "
-                                "delay introduced by the current buffer settings." );
-
-    lblPing->setWhatsThis ( strConnStats );
-    lblPingVal->setWhatsThis ( strConnStats );
-    lblDelay->setWhatsThis ( strConnStats );
-    lblDelayVal->setWhatsThis ( strConnStats );
-    lblPingVal->setText ( "---" );
-    lblPingUnit->setText ( "" );
-    lblDelayVal->setText ( "---" );
-    lblDelayUnit->setText ( "" );
-
-    // init GUI design
-    SetGUIDesign ( pClient->GetGUIDesign() );
-
-    // MeterStyle init
-    SetMeterStyle ( pClient->GetMeterStyle() );
-
-    // set the settings pointer to the mixer board (must be done early)
-    MainMixerBoard->SetSettingsPointer ( pSettings );
-    MainMixerBoard->SetNumMixerPanelRows ( pSettings->iNumMixerPanelRows );
-
-    // Pass through flag for MIDICtrlUsed
-    MainMixerBoard->SetMIDICtrlUsed ( !strMIDISetup.isEmpty() );
-
-    // reset mixer board
-    MainMixerBoard->HideAll();
+    createUi();
+    makeConnections();
+    startTimers();
+    restoreWindowGeometry();
 
     // init status label
-    OnTimerStatus();
+    UpdateDisplay();
+
+    if ( Client.IsRunning() )
+    {
+        SetConnectedGUI ( Client.GetConnectServer() );
+    }
+}
+
+void CClientDlg::createUi()
+{
+    // Main menu bar -----------------------------------------------------------
+    QMenuBar* pMenu = new QMenuBar ( this );
+
+    // Now tell the layout about the menu
+    layout()->setMenuBar ( pMenu );
+
+    // File menu  --------------------------------------------------------------
+    {
+        QMenu* pFileMenu = new QMenu ( tr ( "&File" ), this );
+        pMenu->addMenu ( pFileMenu );
+
+        pFileMenu->addAction ( tr ( "&Connection Setup..." ), this, SLOT ( OnOpenConnectionSetupDialog() ), QKeySequence ( Qt::CTRL + Qt::Key_C ) );
+
+        pFileMenu->addSeparator();
+
+        pFileMenu->addAction ( tr ( "&Load Mixer Channels Setup..." ), this, SLOT ( OnLoadChannelSetup() ) );
+
+        pFileMenu->addAction ( tr ( "&Save Mixer Channels Setup..." ), this, SLOT ( OnSaveChannelSetup() ) );
+
+        pFileMenu->addSeparator();
+
+        pFileMenu->addAction ( tr ( "E&xit" ), this, SLOT ( close() ), QKeySequence ( Qt::CTRL + Qt::Key_Q ) );
+    }
+
+    // Edit menu  --------------------------------------------------------------
+    {
+        QMenu* pEditMenu = new QMenu ( tr ( "&Edit" ), this );
+        pMenu->addMenu ( pEditMenu );
+
+        pEditMenu->addAction ( tr ( "Clear &All Stored Solo and Mute Settings" ), this, SLOT ( OnClearAllStoredSoloMuteSettings() ) );
+
+        pEditMenu->addAction ( tr ( "Set All Faders to New Client &Level" ),
+                               this,
+                               SLOT ( OnSetAllFadersToNewClientLevel() ),
+                               QKeySequence ( Qt::CTRL + Qt::Key_L ) );
+
+        pEditMenu->addAction ( tr ( "Auto-Adjust all &Faders" ), this, SLOT ( OnAutoAdjustAllFaderLevels() ), QKeySequence ( Qt::CTRL + Qt::Key_F ) );
+    }
+
+    // View menu  --------------------------------------------------------------
+    {
+        QMenu* pViewMenu = new QMenu ( tr ( "&View" ), this );
+        pMenu->addMenu ( pViewMenu );
+
+        // own fader first option: works from server version 3.5.5 which supports sending client ID back to client
+        QAction* OwnFaderFirstAction =
+            pViewMenu->addAction ( tr ( "O&wn Fader First" ), this, SLOT ( OnOwnFaderFirst() ), QKeySequence ( Qt::CTRL + Qt::Key_W ) );
+
+        pViewMenu->addSeparator();
+
+        QAction* NoSortAction =
+            pViewMenu->addAction ( tr ( "N&o User Sorting" ), this, SLOT ( OnNoSortChannels() ), QKeySequence ( Qt::CTRL + Qt::Key_O ) );
+
+        QAction* ByNameAction =
+            pViewMenu->addAction ( tr ( "Sort Users by &Name" ), this, SLOT ( OnSortChannelsByName() ), QKeySequence ( Qt::CTRL + Qt::Key_N ) );
+
+        QAction* ByInstrAction = pViewMenu->addAction ( tr ( "Sort Users by &Instrument" ),
+                                                        this,
+                                                        SLOT ( OnSortChannelsByInstrument() ),
+                                                        QKeySequence ( Qt::CTRL + Qt::Key_I ) );
+
+        QAction* ByGroupAction =
+            pViewMenu->addAction ( tr ( "Sort Users by &Group" ), this, SLOT ( OnSortChannelsByGroupID() ), QKeySequence ( Qt::CTRL + Qt::Key_G ) );
+
+        QAction* ByCityAction =
+            pViewMenu->addAction ( tr ( "Sort Users by &City" ), this, SLOT ( OnSortChannelsByCity() ), QKeySequence ( Qt::CTRL + Qt::Key_T ) );
+
+        OwnFaderFirstAction->setCheckable ( true );
+        OwnFaderFirstAction->setChecked ( Client.IsOwnFaderFirst() );
+
+        // the sorting menu entries shall be checkable and exclusive
+        QActionGroup* SortActionGroup = new QActionGroup ( this );
+        SortActionGroup->setExclusive ( true );
+        NoSortAction->setCheckable ( true );
+        SortActionGroup->addAction ( NoSortAction );
+        ByNameAction->setCheckable ( true );
+        SortActionGroup->addAction ( ByNameAction );
+        ByInstrAction->setCheckable ( true );
+        SortActionGroup->addAction ( ByInstrAction );
+        ByGroupAction->setCheckable ( true );
+        SortActionGroup->addAction ( ByGroupAction );
+        ByCityAction->setCheckable ( true );
+        SortActionGroup->addAction ( ByCityAction );
+
+        switch ( static_cast<EChSortType> ( Client.GetChannelSortType() ) )
+        {
+        case ST_NO_SORT:
+            NoSortAction->setChecked ( true );
+            break;
+        case ST_BY_NAME:
+            ByNameAction->setChecked ( true );
+            break;
+        case ST_BY_INSTRUMENT:
+            ByInstrAction->setChecked ( true );
+            break;
+        case ST_BY_GROUPID:
+            ByGroupAction->setChecked ( true );
+            break;
+        case ST_BY_CITY:
+            ByCityAction->setChecked ( true );
+            break;
+        }
+
+        pViewMenu->addSeparator();
+
+        pViewMenu->addAction ( tr ( "C&hat..." ), this, SLOT ( OnOpenChatDialog() ), QKeySequence ( Qt::CTRL + Qt::Key_H ) );
+
+        // optionally show analyzer console entry
+        if ( Client.IsShowAnalyzerConsole() )
+        {
+            pViewMenu->addSeparator();
+
+            pViewMenu->addAction ( tr ( "&Analyzer Console..." ), this, SLOT ( OnOpenAnalyzerConsole() ) );
+        }
+    }
+
+    // Settings menu  ----------------------------------------------------------
+    {
+        QMenu* pSettingsMenu = new QMenu ( tr ( "Sett&ings" ), this );
+        pMenu->addMenu ( pSettingsMenu );
+
+        pSettingsMenu->addAction ( tr ( "My &Profile..." ), this, SLOT ( OnOpenUserProfileSettings() ), QKeySequence ( Qt::CTRL + Qt::Key_P ) );
+
+        pSettingsMenu->addAction ( tr ( "Audio/Network &Settings..." ),
+                                   this,
+                                   SLOT ( OnOpenAudioNetSettings() ),
+                                   QKeySequence ( Qt::CTRL + Qt::Key_S ) );
+
+        pSettingsMenu->addAction ( tr ( "A&dvanced Settings..." ), this, SLOT ( OnOpenAdvancedSettings() ), QKeySequence ( Qt::CTRL + Qt::Key_D ) );
+    }
+
+    // Help menu  --------------------------------------------------------------
+    pMenu->addMenu ( new CHelpMenu ( true, this ) );
+
+    // Add help text to controls -----------------------------------------------
+
+    // reverberation level
+    {
+        QString strAudReverb = "<b>" + tr ( "Reverb effect" ) + ":</b> " +
+                               tr ( "Reverb can be applied to one local mono audio channel or to both "
+                                    "channels in stereo mode. The mono channel selection and the "
+                                    "reverb level can be modified. For example, if "
+                                    "a microphone signal is fed in to the right audio channel of the "
+                                    "sound card and a reverb effect needs to be applied, set the "
+                                    "channel selector to right and move the fader upwards until the "
+                                    "desired reverb level is reached." );
+
+        lblAudioReverb->setWhatsThis ( strAudReverb );
+        sldAudioReverb->setWhatsThis ( strAudReverb );
+
+        sldAudioReverb->setAccessibleName ( tr ( "Reverb effect level setting" ) );
+    }
+
+    // reverberation channel selection
+    {
+        QString strRevChanSel = "<b>" + tr ( "Reverb Channel Selection" ) + ":</b> " +
+                                tr ( "With these radio buttons the audio input channel on which the "
+                                     "reverb effect is applied can be chosen. Either the left "
+                                     "or right input channel can be selected." );
+
+        rbtReverbSelL->setWhatsThis ( strRevChanSel );
+        rbtReverbSelL->setAccessibleName ( tr ( "Left channel selection for reverb" ) );
+        rbtReverbSelR->setWhatsThis ( strRevChanSel );
+        rbtReverbSelR->setAccessibleName ( tr ( "Right channel selection for reverb" ) );
+    }
+
+    // input level meter
+    {
+        QString strInpLevH = "<b>" + tr ( "Input Level Meter" ) + ":</b> " +
+                             tr ( "This shows "
+                                  "the level of the two stereo channels "
+                                  "for your audio input." ) +
+                             "<br>" +
+                             tr ( "Make sure not to clip the input signal to avoid distortions of the "
+                                  "audio signal." );
+
+        QString strInpLevHTT = tr ( "If the application "
+                                    "is connected to a server and "
+                                    "you play your instrument/sing into the microphone, the VU "
+                                    "meter should flicker. If this is not the case, you have "
+                                    "probably selected the wrong input channel (e.g. 'line in' instead "
+                                    "of the microphone input) or set the input gain too low in the "
+                                    "(Windows) audio mixer." ) +
+                               "<br>" +
+                               tr ( "For proper usage of the "
+                                    "application, you should not hear your singing/instrument through "
+                                    "the loudspeaker or your headphone when the software is not connected."
+                                    "This can be achieved by muting your input audio channel in the "
+                                    "Playback mixer (not the Recording mixer!)." ) +
+                               TOOLTIP_COM_END_TEXT;
+
+        QString strInpLevHAccText  = tr ( "Input level meter" );
+        QString strInpLevHAccDescr = tr ( "Simulates an analog LED level meter." );
+
+        lblInputLEDMeter->setWhatsThis ( strInpLevH );
+        lblLevelMeterLeft->setWhatsThis ( strInpLevH );
+        lblLevelMeterRight->setWhatsThis ( strInpLevH );
+
+        lbrInputLevelL->setWhatsThis ( strInpLevH );
+        lbrInputLevelL->setAccessibleName ( strInpLevHAccText );
+        lbrInputLevelL->setAccessibleDescription ( strInpLevHAccDescr );
+        lbrInputLevelL->setToolTip ( strInpLevHTT );
+        lbrInputLevelL->setEnabled ( false );
+
+        lbrInputLevelR->setWhatsThis ( strInpLevH );
+        lbrInputLevelR->setAccessibleName ( strInpLevHAccText );
+        lbrInputLevelR->setAccessibleDescription ( strInpLevHAccDescr );
+        lbrInputLevelR->setToolTip ( strInpLevHTT );
+        lbrInputLevelR->setEnabled ( false );
+    }
+
+    // delay LED
+    {/* no longer shown in client
+        QString strLEDDelay = "<b>" + tr ( "Delay Status LED" ) + ":</b> " + tr ( "Shows the current audio delay status:" ) +
+                              "<ul>"
+                              "<li>"
+                              "<b>" +
+                              tr ( "Green" ) + ":</b> " +
+                              tr ( "The delay is perfect for a jam session." ) +
+                              "</li>"
+                              "<li>"
+                              "<b>" +
+                              tr ( "Yellow" ) + ":</b> " +
+                              tr ( "A session is still possible but it may be harder to play." ) +
+                              "</li>"
+                              "<li>"
+                              "<b>" +
+                              tr ( "Red" ) + ":</b> " +
+                              tr ( "The delay is too large for jamming." ) +
+                              "</li>"
+                              "</ul>";
+
+        lblDelay->setWhatsThis ( strLEDDelay );
+        ledDelay->setWhatsThis ( strLEDDelay );
+        ledDelay->setToolTip ( tr ( "If this LED indicator turns red, "
+                                    "you will not have much fun using %1." )
+                                   .arg ( APP_NAME ) +
+                               TOOLTIP_COM_END_TEXT );
+
+        ledDelay->setAccessibleName ( tr ( "Delay status LED indicator" ) );
+    */}
+
+    // Jitter LED
+    {
+        QString strLEDBuffers = "<b>" + tr ( "Local Jitter Buffer Status LED" ) + ":</b> " +
+                                tr ( "The local jitter buffer status LED shows the current audio/streaming "
+                                     "status. If the light is red, the audio stream is interrupted. "
+                                     "This is caused by one of the following problems:" ) +
+                                "<ul>"
+                                "<li>" +
+                                tr ( "The network jitter buffer is not large enough for the current "
+                                     "network/audio interface jitter." ) +
+                                "</li>"
+                                "<li>" +
+                                tr ( "The sound card's buffer delay (buffer size) is too small "
+                                     "(see Settings window)." ) +
+                                "</li>"
+                                "<li>" +
+                                tr ( "The upload or download stream rate is too high for your "
+                                     "internet bandwidth." ) +
+                                "</li>"
+                                "<li>" +
+                                tr ( "The CPU of the client or server is at 100%." ) +
+                                "</li>"
+                                "</ul>";
+
+        lblBuffers->setWhatsThis ( strLEDBuffers );
+        ledBuffers->setWhatsThis ( strLEDBuffers );
+        ledBuffers->setToolTip ( tr ( "If this LED indicator turns red, "
+                                      "the audio stream is interrupted." ) +
+                                 TOOLTIP_COM_END_TEXT );
+
+        ledBuffers->setAccessibleName ( tr ( "Local Jitter Buffer status LED indicator" ) );
+    }
+
+    // current connection status parameter
+    {
+        QString strConnStats = "<b>" + tr ( "Current Connection Status" ) + ":</b> " +
+                               tr ( "The Ping Time is the time required for the audio "
+                                    "stream to travel from the client to the server and back again. This "
+                                    "delay is introduced by the network and should be about "
+                                    "20-30 ms. If this delay is higher than about 50 ms, your distance to "
+                                    "the server is too large or your internet connection is not "
+                                    "sufficient." ) +
+                               "<br>" +
+                               tr ( "Overall Delay is calculated from the current Ping Time and the "
+                                    "delay introduced by the current buffer settings." );
+
+        lblPing->setWhatsThis ( strConnStats );
+        lblPingVal->setWhatsThis ( strConnStats );
+        lblDelay->setWhatsThis ( strConnStats );
+        lblDelayVal->setWhatsThis ( strConnStats );
+        lblPingVal->setText ( "---" );
+        lblPingUnit->setText ( "" );
+        lblDelayVal->setText ( "---" );
+        lblDelayUnit->setText ( "" );
+    }
+
+    // TODO:
+    // WhatsThis and AccessibleName for checkboxes
+    {
+        // ----
+        // WhatsThis and Accessibility for checkboxes
+        // ----
+    }
+
+    // connect/disconnect button
+    {
+        butConnect->setWhatsThis ( "<b>" + tr ( "Connect/Disconnect Button" ) + ":</b> " +
+                                   tr ( "Opens a dialog where you can select a server to connect to. "
+                                        "If you are connected, pressing this button will end the session." ) );
+
+        butConnect->setAccessibleName ( tr ( "Connect and disconnect toggle button" ) );
+    }
+
+    // ---------------------------------------------------------------------------------
+
+    // init GUI design
+    UpdateGUIDesign();
+
+    // MeterStyle init
+    UpdateMeterStyle();
+
+    // init mixer board
+    MainMixerBoard->SetGUIDesign ( Client.GetGUIDesign() );
+    MainMixerBoard->SetMeterStyle ( Client.GetMeterStyle() );
+    MainMixerBoard->SetFaderSorting ( Client.GetChannelSortType() );
+    MainMixerBoard->SetNumMixerPanelRows ( Client.GetNumMixerPanelRows() );
+    MainMixerBoard->SetMIDICtrlUsed ( !Client.GetMIDIControls().isEmpty() );
+    MainMixerBoard->HideAll();
 
     // init connection button text
-    butConnect->setText ( tr ( "C&onnect" ) );
+    butConnect->setText ( Client.IsConnected() ? tr ( "&Disconnect" ) : tr ( "C&onnect" ) );
 
     // init input level meter bars
     lbrInputLevelL->SetValue ( 0 );
@@ -240,24 +419,18 @@ CClientDlg::CClientDlg ( CClient*         pNCliP,
 
     // init audio reverberation
     sldAudioReverb->setRange ( 0, AUD_REVERB_MAX );
-    const int iCurAudReverb = pClient->GetReverbLevel();
-    sldAudioReverb->setValue ( iCurAudReverb );
     sldAudioReverb->setTickInterval ( AUD_REVERB_MAX / 5 );
+    sldAudioReverb->setValue ( Client.GetReverbLevel() );
 
-    // init input boost
-    pClient->SetInputBoost ( pSettings->iInputBoost );
+    chbLocalMute->setCheckState ( Client.MuteOutStream() ? Qt::Checked : Qt::Unchecked );
 
     // init reverb channel
     UpdateRevSelection();
 
-    // init connect dialog
-    ConnectDlg.SetShowAllMusicians ( pSettings->bConnectDlgShowAllMusicians );
-
+    // TODO:
+    // get the client value...
     // set window title (with no clients connected -> "0")
     SetMyWindowTitle ( 0 );
-
-    // track number of clients to detect joins/leaves for audio alerts
-    iClients = 0;
 
     // prepare Mute Myself info label (invisible by default)
     lblGlobalInfoLabel->setStyleSheet ( ".QLabel { background: red; }" );
@@ -267,256 +440,41 @@ CClientDlg::CClientDlg ( CClient*         pNCliP,
     lblUpdateCheck->setOpenExternalLinks ( true ); // enables opening a web browser if one clicks on a html link
     lblUpdateCheck->setText ( "<font color=\"red\"><b>" + APP_UPGRADE_AVAILABLE_MSG_TEXT.arg ( APP_NAME ).arg ( VERSION ) + "</b></font>" );
     lblUpdateCheck->hide();
+}
 
-    // setup timers
-    TimerCheckAudioDeviceOk.setSingleShot ( true ); // only check once after connection
-    TimerDetectFeedback.setSingleShot ( true );
-
-    // Connect on startup ------------------------------------------------------
-    if ( !strConnOnStartupAddress.isEmpty() )
-    {
-        // initiate connection (always show the address in the mixer board
-        // (no alias))
-        Connect ( strConnOnStartupAddress, strConnOnStartupAddress );
-    }
-
-    // File menu  --------------------------------------------------------------
-    QMenu* pFileMenu = new QMenu ( tr ( "&File" ), this );
-
-    pFileMenu->addAction ( tr ( "&Connection Setup..." ), this, SLOT ( OnOpenConnectionSetupDialog() ), QKeySequence ( Qt::CTRL + Qt::Key_C ) );
-
-    pFileMenu->addSeparator();
-
-    pFileMenu->addAction ( tr ( "&Load Mixer Channels Setup..." ), this, SLOT ( OnLoadChannelSetup() ) );
-
-    pFileMenu->addAction ( tr ( "&Save Mixer Channels Setup..." ), this, SLOT ( OnSaveChannelSetup() ) );
-
-    pFileMenu->addSeparator();
-
-    pFileMenu->addAction ( tr ( "E&xit" ), this, SLOT ( close() ), QKeySequence ( Qt::CTRL + Qt::Key_Q ) );
-
-    // Edit menu  --------------------------------------------------------------
-    QMenu* pEditMenu = new QMenu ( tr ( "&Edit" ), this );
-
-    pEditMenu->addAction ( tr ( "Clear &All Stored Solo and Mute Settings" ), this, SLOT ( OnClearAllStoredSoloMuteSettings() ) );
-
-    pEditMenu->addAction ( tr ( "Set All Faders to New Client &Level" ),
-                           this,
-                           SLOT ( OnSetAllFadersToNewClientLevel() ),
-                           QKeySequence ( Qt::CTRL + Qt::Key_L ) );
-
-    pEditMenu->addAction ( tr ( "Auto-Adjust all &Faders" ), this, SLOT ( OnAutoAdjustAllFaderLevels() ), QKeySequence ( Qt::CTRL + Qt::Key_F ) );
-
-    // View menu  --------------------------------------------------------------
-    QMenu* pViewMenu = new QMenu ( tr ( "&View" ), this );
-
-    // own fader first option: works from server version 3.5.5 which supports sending client ID back to client
-    QAction* OwnFaderFirstAction =
-        pViewMenu->addAction ( tr ( "O&wn Fader First" ), this, SLOT ( OnOwnFaderFirst() ), QKeySequence ( Qt::CTRL + Qt::Key_W ) );
-
-    pViewMenu->addSeparator();
-
-    QAction* NoSortAction =
-        pViewMenu->addAction ( tr ( "N&o User Sorting" ), this, SLOT ( OnNoSortChannels() ), QKeySequence ( Qt::CTRL + Qt::Key_O ) );
-
-    QAction* ByNameAction =
-        pViewMenu->addAction ( tr ( "Sort Users by &Name" ), this, SLOT ( OnSortChannelsByName() ), QKeySequence ( Qt::CTRL + Qt::Key_N ) );
-
-    QAction* ByInstrAction = pViewMenu->addAction ( tr ( "Sort Users by &Instrument" ),
-                                                    this,
-                                                    SLOT ( OnSortChannelsByInstrument() ),
-                                                    QKeySequence ( Qt::CTRL + Qt::Key_I ) );
-
-    QAction* ByGroupAction =
-        pViewMenu->addAction ( tr ( "Sort Users by &Group" ), this, SLOT ( OnSortChannelsByGroupID() ), QKeySequence ( Qt::CTRL + Qt::Key_G ) );
-
-    QAction* ByCityAction =
-        pViewMenu->addAction ( tr ( "Sort Users by &City" ), this, SLOT ( OnSortChannelsByCity() ), QKeySequence ( Qt::CTRL + Qt::Key_T ) );
-
-    OwnFaderFirstAction->setCheckable ( true );
-    OwnFaderFirstAction->setChecked ( pSettings->bOwnFaderFirst );
-
-    // the sorting menu entries shall be checkable and exclusive
-    QActionGroup* SortActionGroup = new QActionGroup ( this );
-    SortActionGroup->setExclusive ( true );
-    NoSortAction->setCheckable ( true );
-    SortActionGroup->addAction ( NoSortAction );
-    ByNameAction->setCheckable ( true );
-    SortActionGroup->addAction ( ByNameAction );
-    ByInstrAction->setCheckable ( true );
-    SortActionGroup->addAction ( ByInstrAction );
-    ByGroupAction->setCheckable ( true );
-    SortActionGroup->addAction ( ByGroupAction );
-    ByCityAction->setCheckable ( true );
-    SortActionGroup->addAction ( ByCityAction );
-
-    // initialize sort type setting (i.e., recover stored setting)
-    switch ( pSettings->eChannelSortType )
-    {
-    case ST_NO_SORT:
-        NoSortAction->setChecked ( true );
-        break;
-    case ST_BY_NAME:
-        ByNameAction->setChecked ( true );
-        break;
-    case ST_BY_INSTRUMENT:
-        ByInstrAction->setChecked ( true );
-        break;
-    case ST_BY_GROUPID:
-        ByGroupAction->setChecked ( true );
-        break;
-    case ST_BY_CITY:
-        ByCityAction->setChecked ( true );
-        break;
-    }
-    MainMixerBoard->SetFaderSorting ( pSettings->eChannelSortType );
-
-    pViewMenu->addSeparator();
-
-    pViewMenu->addAction ( tr ( "C&hat..." ), this, SLOT ( OnOpenChatDialog() ), QKeySequence ( Qt::CTRL + Qt::Key_H ) );
-
-    // optionally show analyzer console entry
-    if ( bShowAnalyzerConsole )
-    {
-        pViewMenu->addAction ( tr ( "&Analyzer Console..." ), this, SLOT ( OnOpenAnalyzerConsole() ) );
-    }
-
-    pViewMenu->addSeparator();
-
-    // Settings menu  --------------------------------------------------------------
-    QMenu* pSettingsMenu = new QMenu ( tr ( "Sett&ings" ), this );
-
-    pSettingsMenu->addAction ( tr ( "My &Profile..." ), this, SLOT ( OnOpenUserProfileSettings() ), QKeySequence ( Qt::CTRL + Qt::Key_P ) );
-
-    pSettingsMenu->addAction ( tr ( "Audio/Network &Settings..." ), this, SLOT ( OnOpenAudioNetSettings() ), QKeySequence ( Qt::CTRL + Qt::Key_S ) );
-
-    pSettingsMenu->addAction ( tr ( "A&dvanced Settings..." ), this, SLOT ( OnOpenAdvancedSettings() ), QKeySequence ( Qt::CTRL + Qt::Key_D ) );
-
-    // Main menu bar -----------------------------------------------------------
-    QMenuBar* pMenu = new QMenuBar ( this );
-
-    pMenu->addMenu ( pFileMenu );
-    pMenu->addMenu ( pEditMenu );
-    pMenu->addMenu ( pViewMenu );
-    pMenu->addMenu ( pSettingsMenu );
-    pMenu->addMenu ( new CHelpMenu ( true, this ) );
-
-    // Now tell the layout about the menu
-    layout()->setMenuBar ( pMenu );
-
-    // Window positions --------------------------------------------------------
-    // main window
-    if ( !pSettings->vecWindowPosMain.isEmpty() && !pSettings->vecWindowPosMain.isNull() )
-    {
-        restoreGeometry ( pSettings->vecWindowPosMain );
-    }
-
-    // settings window
-    if ( !pSettings->vecWindowPosSettings.isEmpty() && !pSettings->vecWindowPosSettings.isNull() )
-    {
-        ClientSettingsDlg.restoreGeometry ( pSettings->vecWindowPosSettings );
-    }
-
-    if ( pSettings->bWindowWasShownSettings )
-    {
-        ShowGeneralSettings ( pSettings->iSettingsTab );
-    }
-
-    // chat window
-    if ( !pSettings->vecWindowPosChat.isEmpty() && !pSettings->vecWindowPosChat.isNull() )
-    {
-        ChatDlg.restoreGeometry ( pSettings->vecWindowPosChat );
-    }
-
-    if ( pSettings->bWindowWasShownChat )
-    {
-        ShowChatWindow();
-    }
-
-    // connection setup window
-    if ( !pSettings->vecWindowPosConnect.isEmpty() && !pSettings->vecWindowPosConnect.isNull() )
-    {
-        ConnectDlg.restoreGeometry ( pSettings->vecWindowPosConnect );
-    }
-
-    // Connections -------------------------------------------------------------
-    // push buttons
-    QObject::connect ( butConnect, &QPushButton::clicked, this, &CClientDlg::OnConnectDisconBut );
-
-    // check boxes
-    QObject::connect ( chbSettings, &QCheckBox::stateChanged, this, &CClientDlg::OnSettingsStateChanged );
-
-    QObject::connect ( chbChat, &QCheckBox::stateChanged, this, &CClientDlg::OnChatStateChanged );
-
-    QObject::connect ( chbLocalMute, &QCheckBox::stateChanged, this, &CClientDlg::OnLocalMuteStateChanged );
-
-    // timers
-    QObject::connect ( &TimerSigMet, &QTimer::timeout, this, &CClientDlg::OnTimerSigMet );
-
-    QObject::connect ( &TimerBuffersLED, &QTimer::timeout, this, &CClientDlg::OnTimerBuffersLED );
-
-    QObject::connect ( &TimerStatus, &QTimer::timeout, this, &CClientDlg::OnTimerStatus );
-
-    QObject::connect ( &TimerPing, &QTimer::timeout, this, &CClientDlg::OnTimerPing );
-
-    QObject::connect ( &TimerCheckAudioDeviceOk, &QTimer::timeout, this, &CClientDlg::OnTimerCheckAudioDeviceOk );
-
-    QObject::connect ( &TimerDetectFeedback, &QTimer::timeout, this, &CClientDlg::OnTimerDetectFeedback );
+void CClientDlg::makeConnections()
+{
+    // TODO:
+    // -- lots of these will change - settings will directly update and clientdialog will get emit from that
+    //    and in other places the instances will manage for themselves
+    //
+    // UI Connections ----------------------------------------------------------
+    // client menu extras - ideally, ClientSettingsDlg would do this wiring for itself (through the client instance)
+    QObject::connect ( this, &CClientDlg::SendTabChange, &ClientSettingsDlg, &CClientSettingsDlg::OnClientMakeTabChange );
 
     QObject::connect ( sldAudioReverb, &QSlider::valueChanged, this, &CClientDlg::OnAudioReverbValueChanged );
 
-    // radio buttons
     QObject::connect ( rbtReverbSelL, &QRadioButton::clicked, this, &CClientDlg::OnReverbSelLClicked );
 
     QObject::connect ( rbtReverbSelR, &QRadioButton::clicked, this, &CClientDlg::OnReverbSelRClicked );
 
-    // other
-    QObject::connect ( pClient, &CClient::ConClientListMesReceived, this, &CClientDlg::OnConClientListMesReceived );
+    QObject::connect ( chbLocalMute, &QCheckBox::stateChanged, this, &CClientDlg::OnLocalMuteStateChanged );
 
-    QObject::connect ( pClient, &CClient::Disconnected, this, &CClientDlg::OnDisconnected );
+    QObject::connect ( chbSettings, &QCheckBox::stateChanged, this, &CClientDlg::OnSettingsStateChanged );
 
-    QObject::connect ( pClient, &CClient::ChatTextReceived, this, &CClientDlg::OnChatTextReceived );
+    QObject::connect ( chbChat, &QCheckBox::stateChanged, this, &CClientDlg::OnChatStateChanged );
 
-    QObject::connect ( pClient, &CClient::ClientIDReceived, this, &CClientDlg::OnClientIDReceived );
+    QObject::connect ( butConnect, &QPushButton::clicked, this, &CClientDlg::OnConnectDisconBut );
 
-    QObject::connect ( pClient, &CClient::MuteStateHasChangedReceived, this, &CClientDlg::OnMuteStateHasChangedReceived );
+    // mixerboard to client
+    QObject::connect ( MainMixerBoard, &CAudioMixerBoard::ChangeChanGain, this, &CClientDlg::OnChangeChanGain );
 
-    QObject::connect ( pClient, &CClient::RecorderStateReceived, this, &CClientDlg::OnRecorderStateReceived );
+    QObject::connect ( MainMixerBoard, &CAudioMixerBoard::ChangeChanPan, this, &CClientDlg::OnChangeChanPan );
 
-    // This connection is a special case. On receiving a licence required message via the
-    // protocol, a modal licence dialog is opened. Since this blocks the thread, we need
-    // a queued connection to make sure the core protocol mechanism is not blocked, too.
-    qRegisterMetaType<ELicenceType> ( "ELicenceType" );
-    QObject::connect ( pClient, &CClient::LicenceRequired, this, &CClientDlg::OnLicenceRequired, Qt::QueuedConnection );
+    // chat to client
+    QObject::connect ( &ChatDlg, &CChatDlg::NewLocalInputText, this, &CClientDlg::OnNewLocalInputText );
 
-    QObject::connect ( pClient, &CClient::PingTimeReceived, this, &CClientDlg::OnPingTimeResult );
-
-    QObject::connect ( pClient, &CClient::CLServerListReceived, this, &CClientDlg::OnCLServerListReceived );
-
-    QObject::connect ( pClient, &CClient::CLRedServerListReceived, this, &CClientDlg::OnCLRedServerListReceived );
-
-    QObject::connect ( pClient, &CClient::CLConnClientsListMesReceived, this, &CClientDlg::OnCLConnClientsListMesReceived );
-
-    QObject::connect ( pClient, &CClient::CLPingTimeWithNumClientsReceived, this, &CClientDlg::OnCLPingTimeWithNumClientsReceived );
-
-    QObject::connect ( pClient, &CClient::ControllerInFaderLevel, this, &CClientDlg::OnControllerInFaderLevel );
-
-    QObject::connect ( pClient, &CClient::ControllerInPanValue, this, &CClientDlg::OnControllerInPanValue );
-
-    QObject::connect ( pClient, &CClient::ControllerInFaderIsSolo, this, &CClientDlg::OnControllerInFaderIsSolo );
-
-    QObject::connect ( pClient, &CClient::ControllerInFaderIsMute, this, &CClientDlg::OnControllerInFaderIsMute );
-
-    QObject::connect ( pClient, &CClient::ControllerInMuteMyself, this, &CClientDlg::OnControllerInMuteMyself );
-
-    QObject::connect ( pClient, &CClient::CLChannelLevelListReceived, this, &CClientDlg::OnCLChannelLevelListReceived );
-
-    QObject::connect ( pClient, &CClient::VersionAndOSReceived, this, &CClientDlg::OnVersionAndOSReceived );
-
-    QObject::connect ( pClient, &CClient::CLVersionAndOSReceived, this, &CClientDlg::OnCLVersionAndOSReceived );
-
-    QObject::connect ( pClient, &CClient::SoundDeviceChanged, this, &CClientDlg::OnSoundDeviceChanged );
-
+    // settings to where they need to go
     QObject::connect ( &ClientSettingsDlg, &CClientSettingsDlg::GUIDesignChanged, this, &CClientDlg::OnGUIDesignChanged );
 
     QObject::connect ( &ClientSettingsDlg, &CClientSettingsDlg::MeterStyleChanged, this, &CClientDlg::OnMeterStyleChanged );
@@ -527,16 +485,7 @@ CClientDlg::CClientDlg ( CClient*         pNCliP,
 
     QObject::connect ( &ClientSettingsDlg, &CClientSettingsDlg::NumMixerPanelRowsChanged, this, &CClientDlg::OnNumMixerPanelRowsChanged );
 
-    QObject::connect ( this, &CClientDlg::SendTabChange, &ClientSettingsDlg, &CClientSettingsDlg::OnMakeTabChange );
-
-    QObject::connect ( MainMixerBoard, &CAudioMixerBoard::ChangeChanGain, this, &CClientDlg::OnChangeChanGain );
-
-    QObject::connect ( MainMixerBoard, &CAudioMixerBoard::ChangeChanPan, this, &CClientDlg::OnChangeChanPan );
-
-    QObject::connect ( MainMixerBoard, &CAudioMixerBoard::NumClientsChanged, this, &CClientDlg::OnNumClientsChanged );
-
-    QObject::connect ( &ChatDlg, &CChatDlg::NewLocalInputText, this, &CClientDlg::OnNewLocalInputText );
-
+    // connection setup window
     QObject::connect ( &ConnectDlg, &CConnectDlg::ReqServerListQuery, this, &CClientDlg::OnReqServerListQuery );
 
     // note that this connection must be a queued connection, otherwise the server list ping
@@ -554,72 +503,156 @@ CClientDlg::CClientDlg ( CClient*         pNCliP,
 
     QObject::connect ( &ConnectDlg, &CConnectDlg::accepted, this, &CClientDlg::OnConnectDlgAccepted );
 
+    // Timers ------------------------------------------------------------------
+    QObject::connect ( &TimerSigMet, &QTimer::timeout, this, &CClientDlg::OnTimerSigMet );
+
+    QObject::connect ( &TimerBuffersLED, &QTimer::timeout, this, &CClientDlg::OnTimerBuffersLED );
+
+    QObject::connect ( &TimerStatus, &QTimer::timeout, this, &CClientDlg::OnTimerStatus );
+
+    QObject::connect ( &TimerPing, &QTimer::timeout, this, &CClientDlg::OnTimerPing );
+
+    QObject::connect ( &TimerDisplaySoundcardPopup, &QTimer::timeout, this, &CClientDlg::OnTimerCheckAudioDeviceOk );
+
+    QObject::connect ( &TimerFeedbackDetectionPeriod, &QTimer::timeout, this, &CClientDlg::OnFeedbackDetectionExpired );
+
+    // From client -------------------------------------------------------------
+    QObject::connect ( &Client, &CClient::ConClientListMesReceived, this, &CClientDlg::OnConClientListMesReceived );
+
+    QObject::connect ( &Client, &CClient::Disconnected, this, &CClientDlg::OnDisconnected );
+
+    QObject::connect ( &Client, &CClient::ChatTextReceived, this, &CClientDlg::OnChatTextReceived );
+
+    QObject::connect ( &Client, &CClient::ClientIDReceived, this, &CClientDlg::OnClientIDReceived );
+
+    QObject::connect ( &Client, &CClient::MuteStateHasChangedReceived, this, &CClientDlg::OnMuteStateHasChangedReceived );
+
+    QObject::connect ( &Client, &CClient::RecorderStateReceived, this, &CClientDlg::OnRecorderStateReceived );
+
+    // This connection is a special case. On receiving a licence required message via the
+    // protocol, a modal licence dialog is opened. Since this blocks the thread, we need
+    // a queued connection to make sure the core protocol mechanism is not blocked, too.
+    qRegisterMetaType<ELicenceType> ( "ELicenceType" );
+    QObject::connect ( &Client, &CClient::LicenceRequired, this, &CClientDlg::OnLicenceRequired, Qt::QueuedConnection );
+
+    QObject::connect ( &Client, &CClient::PingTimeReceived, this, &CClientDlg::OnPingTimeResult );
+
+    QObject::connect ( &Client, &CClient::CLServerListReceived, this, &CClientDlg::OnCLServerListReceived );
+
+    QObject::connect ( &Client, &CClient::CLRedServerListReceived, this, &CClientDlg::OnCLRedServerListReceived );
+
+    QObject::connect ( &Client, &CClient::CLConnClientsListMesReceived, this, &CClientDlg::OnCLConnClientsListMesReceived );
+
+    QObject::connect ( &Client, &CClient::CLPingTimeWithNumClientsReceived, this, &CClientDlg::OnCLPingTimeWithNumClientsReceived );
+
+    QObject::connect ( &Client, &CClient::ControllerInFaderLevel, this, &CClientDlg::OnControllerInFaderLevel );
+
+    QObject::connect ( &Client, &CClient::ControllerInPanValue, this, &CClientDlg::OnControllerInPanValue );
+
+    QObject::connect ( &Client, &CClient::ControllerInFaderIsSolo, this, &CClientDlg::OnControllerInFaderIsSolo );
+
+    QObject::connect ( &Client, &CClient::ControllerInFaderIsMute, this, &CClientDlg::OnControllerInFaderIsMute );
+
+    QObject::connect ( &Client, &CClient::CLChannelLevelListReceived, this, &CClientDlg::OnCLChannelLevelListReceived );
+
+    QObject::connect ( &Client, &CClient::VersionAndOSReceived, this, &CClientDlg::OnVersionAndOSReceived );
+
+    QObject::connect ( &Client, &CClient::CLVersionAndOSReceived, this, &CClientDlg::OnCLVersionAndOSReceived );
+
+    QObject::connect ( &Client, &CClient::SoundDeviceChanged, this, &CClientDlg::OnSoundDeviceChanged );
+}
+
+void CClientDlg::startTimers()
+{
+    // TODO these should not be in the UI!
+    // setup timers
+    TimerDisplaySoundcardPopup.setSingleShot ( true ); // only check once after connection...
+    TimerFeedbackDetectionPeriod.setSingleShot ( true );
+
     // Initializations which have to be done after the signals are connected ---
     // start timer for status bar
     TimerStatus.start ( LED_BAR_UPDATE_TIME_MS );
+}
 
-    // restore connect dialog
-    if ( pSettings->bWindowWasShownConnect )
+void CClientDlg::restoreWindowGeometry()
+{
+    // Window positions --------------------------------------------------------
+    // main window
+    if ( !Client.GetMainWindowGeometry().isEmpty() && !Client.GetMainWindowGeometry().isNull() )
+    {
+        restoreGeometry ( Client.GetMainWindowGeometry() );
+    }
+
+    // settings window
+    if ( !Client.GetSettingsWindowGeometry().isEmpty() && !Client.GetSettingsWindowGeometry().isNull() )
+    {
+        ClientSettingsDlg.restoreGeometry ( Client.GetSettingsWindowGeometry() );
+    }
+
+    if ( Client.IsSettingsWindowVisible() )
+    {
+        ShowGeneralSettings ( Client.GetSettingsTab() );
+    }
+
+    // chat window
+    if ( !Client.GetChatWindowGeometry().isEmpty() && !Client.GetChatWindowGeometry().isNull() )
+    {
+        ChatDlg.restoreGeometry ( Client.GetChatWindowGeometry() );
+    }
+
+    if ( Client.IsChatWindowVisible() )
+    {
+        ShowChatWindow();
+    }
+
+    // connect window
+    ConnectDlg.SetShowAllMusicians ( Client.IsShowAllMusicians() );
+
+    if ( !Client.GetConnectWindowGeometry().isEmpty() && !Client.GetConnectWindowGeometry().isNull() )
+    {
+        ConnectDlg.restoreGeometry ( Client.GetConnectWindowGeometry() );
+    }
+
+    if ( Client.IsConnectWindowVisible() )
     {
         ShowConnectionSetupDialog();
-    }
-
-    // mute stream on startup (must be done after the signal connections)
-    if ( bMuteStream )
-    {
-        chbLocalMute->setCheckState ( Qt::Checked );
-    }
-
-    // query the update server version number needed for update check (note
-    // that the connection less message respond may not make it back but that
-    // is not critical since the next time Jamulus is started we have another
-    // chance and the update check is not time-critical at all)
-    CHostAddress UpdateServerHostAddress;
-
-    // Send the request to two servers for redundancy if either or both of them
-    // has a higher release version number, the reply will trigger the notification.
-
-    if ( NetworkUtil().ParseNetworkAddress ( UPDATECHECK1_ADDRESS, UpdateServerHostAddress, bEnableIPv6 ) )
-    {
-        pClient->CreateCLServerListReqVerAndOSMes ( UpdateServerHostAddress );
-    }
-
-    if ( NetworkUtil().ParseNetworkAddress ( UPDATECHECK2_ADDRESS, UpdateServerHostAddress, bEnableIPv6 ) )
-    {
-        pClient->CreateCLServerListReqVerAndOSMes ( UpdateServerHostAddress );
     }
 }
 
 void CClientDlg::closeEvent ( QCloseEvent* Event )
 {
+    // make sure all current fader settings are applied to the settings struct
+    MainMixerBoard->StoreAllFaderSettings();
+
+    // ClientSettingsDlg doesn't expose selected tab and the setting is not used
+
+    Client.SetShowAllMusicians ( ConnectDlg.GetShowAllMusicians() );
+
+    Client.SetChannelSortType ( MainMixerBoard->GetFaderSorting() );
+    Client.SetNumMixerPanelRows ( MainMixerBoard->GetNumMixerPanelRows() );
+
     // store window positions
-    pSettings->vecWindowPosMain     = saveGeometry();
-    pSettings->vecWindowPosSettings = ClientSettingsDlg.saveGeometry();
-    pSettings->vecWindowPosChat     = ChatDlg.saveGeometry();
-    pSettings->vecWindowPosConnect  = ConnectDlg.saveGeometry();
+    Client.SetMainWindowGeometry ( saveGeometry() );
+    Client.SetSettingsWindowGeometry ( ClientSettingsDlg.saveGeometry() );
+    Client.SetChatWindowGeometry ( ChatDlg.saveGeometry() );
+    Client.SetConnectWindowGeometry ( ConnectDlg.saveGeometry() );
 
-    pSettings->bWindowWasShownSettings = ClientSettingsDlg.isVisible();
-    pSettings->bWindowWasShownChat     = ChatDlg.isVisible();
-    pSettings->bWindowWasShownConnect  = ConnectDlg.isVisible();
+    // store child window visiblity
+    Client.SetSettingsWindowVisible ( ClientSettingsDlg.isVisible() );
+    Client.SetChatWindowVisible ( ChatDlg.isVisible() );
+    Client.SetConnectWindowVisible ( ConnectDlg.isVisible() );
 
-    // if settings/connect dialog or chat dialog is open, close it
+    // close child windows
     ClientSettingsDlg.close();
     ChatDlg.close();
     ConnectDlg.close();
     AnalyzerConsole.close();
 
-    // if connected, terminate connection
-    if ( pClient->IsRunning() )
+    // if connected, terminate connection -- client should do this for itself?
+    if ( Client.IsRunning() )
     {
-        pClient->Stop();
+        Client.Stop();
     }
-
-    // make sure all current fader settings are applied to the settings struct
-    MainMixerBoard->StoreAllFaderSettings();
-
-    pSettings->bConnectDlgShowAllMusicians = ConnectDlg.GetShowAllMusicians();
-    pSettings->eChannelSortType            = MainMixerBoard->GetFaderSorting();
-    pSettings->iNumMixerPanelRows          = MainMixerBoard->GetNumMixerPanelRows();
 
     // default implementation of this event handler routine
     Event->accept();
@@ -645,7 +678,7 @@ void CClientDlg::ManageDragNDrop ( QDropEvent* Event, const bool bCheckAccept )
             else
             {
                 // load the first valid settings file and leave the loop
-                pSettings->LoadFaderSettings ( strFileNameWithPath );
+                Client.LoadFaderSettings ( strFileNameWithPath );
                 MainMixerBoard->LoadAllFaderSettings();
                 break;
             }
@@ -655,7 +688,7 @@ void CClientDlg::ManageDragNDrop ( QDropEvent* Event, const bool bCheckAccept )
 
 void CClientDlg::UpdateRevSelection()
 {
-    if ( pClient->GetAudioChannels() == CC_STEREO )
+    if ( Client.GetAudioChannels() == CC_STEREO )
     {
         // for stereo make channel selection invisible since
         // reverberation effect is always applied to both channels
@@ -669,7 +702,7 @@ void CClientDlg::UpdateRevSelection()
         rbtReverbSelR->setVisible ( true );
 
         // update value
-        if ( pClient->IsReverbOnLeftChan() )
+        if ( Client.IsReverbOnLeftChan() )
         {
             rbtReverbSelL->setChecked ( true );
         }
@@ -680,7 +713,7 @@ void CClientDlg::UpdateRevSelection()
     }
 
     // update visibility of the pan controls in the audio mixer board (pan is not supported for mono)
-    MainMixerBoard->SetDisplayPans ( pClient->GetAudioChannels() != CC_MONO );
+    MainMixerBoard->SetDisplayPans ( Client.GetAudioChannels() != CC_MONO );
 }
 
 void CClientDlg::OnConnectDlgAccepted()
@@ -700,7 +733,7 @@ void CClientDlg::OnConnectDlgAccepted()
         {
             // store new address at the top of the list, if the list was already
             // full, the last element is thrown out
-            pSettings->vstrIPAddress.StringFiFoWithCompare ( strSelectedAddress );
+            Client.StoreServerAddress ( strSelectedAddress );
         }
 
         // get name to be set in audio mixer group box title
@@ -732,7 +765,7 @@ void CClientDlg::OnConnectDlgAccepted()
 
         // first check if we are already connected, if this is the case we have to
         // disconnect the old server first
-        if ( pClient->IsRunning() )
+        if ( Client.IsRunning() )
         {
             Disconnect();
         }
@@ -748,10 +781,10 @@ void CClientDlg::OnConnectDlgAccepted()
 void CClientDlg::OnConnectDisconBut()
 {
     // the connect/disconnect button implements a toggle functionality
-    if ( pClient->IsRunning() )
+    if ( Client.IsRunning() )
     {
         Disconnect();
-        SetMixerBoardDeco ( RS_UNDEFINED, pClient->GetGUIDesign() );
+        UpdateMixerBoardDeco ( RS_UNDEFINED, Client.GetGUIDesign() );
     }
     else
     {
@@ -764,8 +797,8 @@ void CClientDlg::OnClearAllStoredSoloMuteSettings()
     // if we are in an active connection, we first have to store all fader settings in
     // the settings struct, clear the solo and mute states and then apply the settings again
     MainMixerBoard->StoreAllFaderSettings();
-    pSettings->vecStoredFaderIsSolo.Reset ( false );
-    pSettings->vecStoredFaderIsMute.Reset ( false );
+    Client.ClearStoredFaderIsSolo();
+    Client.ClearStoredFaderIsMute();
     MainMixerBoard->LoadAllFaderSettings();
 }
 
@@ -776,7 +809,7 @@ void CClientDlg::OnLoadChannelSetup()
     if ( !strFileName.isEmpty() )
     {
         // first update the settings struct and then update the mixer panel
-        pSettings->LoadFaderSettings ( strFileName );
+        Client.LoadFaderSettings ( strFileName );
         MainMixerBoard->LoadAllFaderSettings();
     }
 }
@@ -790,7 +823,7 @@ void CClientDlg::OnSaveChannelSetup()
         // first store all current fader settings (in case we are in an active connection
         // right now) and then save the information in the settings struct in the file
         MainMixerBoard->StoreAllFaderSettings();
-        pSettings->SaveFaderSettings ( strFileName );
+        Client.SaveFaderSettings ( strFileName );
     }
 }
 
@@ -827,12 +860,6 @@ void CClientDlg::OnCLVersionAndOSReceived ( CHostAddress, COSUtil::EOpSystemType
 
 void CClientDlg::OnChatTextReceived ( QString strChatText )
 {
-    if ( pSettings->bEnableAudioAlerts )
-    {
-        QSoundEffect* sf = new QSoundEffect();
-        sf->setSource ( QUrl::fromLocalFile ( ":sounds/res/sounds/new_message.wav" ) );
-        sf->play();
-    }
     ChatDlg.AddChatText ( strChatText );
 
     // Open chat dialog. If a server welcome message is received, we force
@@ -852,7 +879,7 @@ void CClientDlg::OnLicenceRequired ( ELicenceType eLicenceType )
         CLicenceDlg LicenceDlg;
 
         // mute the client output stream
-        pClient->SetMuteOutStream ( true );
+        Client.SetMuteOutStream ( true );
 
         // Open the licence dialog and check if the licence was accepted. In
         // case the dialog is just closed or the decline button was pressed,
@@ -865,7 +892,7 @@ void CClientDlg::OnLicenceRequired ( ELicenceType eLicenceType )
         // unmute the client output stream if local mute button is not pressed
         if ( chbLocalMute->checkState() == Qt::Unchecked )
         {
-            pClient->SetMuteOutStream ( false );
+            Client.SetMuteOutStream ( false );
         }
     }
 }
@@ -874,21 +901,13 @@ void CClientDlg::OnConClientListMesReceived ( CVector<CChannelInfo> vecChanInfo 
 {
     // update mixer board with the additional client infos
     MainMixerBoard->ApplyNewConClientList ( vecChanInfo );
+
+    // Update window title with number of connected clients
+    SetMyWindowTitle ( vecChanInfo.Size() );
 }
 
 void CClientDlg::OnNumClientsChanged ( int iNewNumClients )
 {
-    if ( pSettings->bEnableAudioAlerts && iNewNumClients > iClients )
-    {
-        QSoundEffect* sf = new QSoundEffect();
-        sf->setSource ( QUrl::fromLocalFile ( ":sounds/res/sounds/new_user.wav" ) );
-        sf->play();
-    }
-
-    // iNewNumClients will be zero on the first trigger of this signal handler when connecting to a new server.
-    // Subsequent triggers will thus sound the alert (if enabled).
-    iClients = iNewNumClients;
-
     // update window title
     SetMyWindowTitle ( iNewNumClients );
 }
@@ -905,13 +924,13 @@ void CClientDlg::SetMyWindowTitle ( const int iNumClients )
     // according to the following specification (#559):
     // <ServerName> - <N> users - Jamulus
     QString    strWinTitle;
-    const bool bClientNameIsUsed = !pClient->strClientName.isEmpty();
+    const bool bClientNameIsUsed = !Client.GetClientName().isEmpty();
 
     if ( bClientNameIsUsed )
     {
         // if --clientname is used, the APP_NAME must be the very first word in
         // the title, otherwise some user scripts do not work anymore, see #789
-        strWinTitle += QString ( APP_NAME ) + " - " + pClient->strClientName + " ";
+        strWinTitle += QString ( APP_NAME ) + " - " + Client.GetClientName() + " ";
     }
 
     if ( iNumClients == 0 )
@@ -963,8 +982,8 @@ void CClientDlg::ShowConnectionSetupDialog()
 {
     // show connect dialog
     bConnectDlgWasShown = true;
+    ConnectDlg.setWindowTitle ( MakeClientNameTitle ( tr ( "Connect" ), Client.GetClientName() ) );
     ConnectDlg.show();
-    ConnectDlg.setWindowTitle ( MakeClientNameTitle ( tr ( "Connect" ), pClient->strClientName ) );
 
     // make sure dialog is upfront and has focus
     ConnectDlg.raise();
@@ -975,8 +994,8 @@ void CClientDlg::ShowGeneralSettings ( int iTab )
 {
     // open general settings dialog
     emit SendTabChange ( iTab );
+    ClientSettingsDlg.setWindowTitle ( MakeClientNameTitle ( tr ( "Settings" ), Client.GetClientName() ) );
     ClientSettingsDlg.show();
-    ClientSettingsDlg.setWindowTitle ( MakeClientNameTitle ( tr ( "Settings" ), pClient->strClientName ) );
 
     // make sure dialog is upfront and has focus
     ClientSettingsDlg.raise();
@@ -985,8 +1004,8 @@ void CClientDlg::ShowGeneralSettings ( int iTab )
 
 void CClientDlg::ShowChatWindow ( const bool bForceRaise )
 {
+    ChatDlg.setWindowTitle ( MakeClientNameTitle ( tr ( "Chat" ), Client.GetClientName() ) );
     ChatDlg.show();
-    ChatDlg.setWindowTitle ( MakeClientNameTitle ( tr ( "Chat" ), pClient->strClientName ) );
 
     if ( bForceRaise )
     {
@@ -1035,7 +1054,7 @@ void CClientDlg::OnChatStateChanged ( int value )
 
 void CClientDlg::OnLocalMuteStateChanged ( int value )
 {
-    pClient->SetMuteOutStream ( value == Qt::Checked );
+    Client.SetMuteOutStream ( value == Qt::Checked );
 
     // show/hide info label
     if ( value == Qt::Checked )
@@ -1048,14 +1067,19 @@ void CClientDlg::OnLocalMuteStateChanged ( int value )
     }
 }
 
+/***
+ * TODO:
+ * CClient should monitor for feedback and emit a signal when it is detected
+ * This handler should then just do the UI part (everything except the "if")
+\***/
 void CClientDlg::OnTimerSigMet()
 {
     // show current level
-    lbrInputLevelL->SetValue ( pClient->GetLevelForMeterdBLeft() );
-    lbrInputLevelR->SetValue ( pClient->GetLevelForMeterdBRight() );
+    lbrInputLevelL->SetValue ( Client.GetLevelForMeterdBLeft() );
+    lbrInputLevelR->SetValue ( Client.GetLevelForMeterdBRight() );
 
-    if ( bDetectFeedback &&
-         ( pClient->GetLevelForMeterdBLeft() > NUM_STEPS_LED_BAR - 0.5 || pClient->GetLevelForMeterdBRight() > NUM_STEPS_LED_BAR - 0.5 ) )
+    if ( bDetectingFeedback &&
+         ( Client.GetLevelForMeterdBLeft() > NUM_STEPS_LED_BAR - 0.5 || Client.GetLevelForMeterdBRight() > NUM_STEPS_LED_BAR - 0.5 ) )
     {
         // mute locally and mute channel
         chbLocalMute->setCheckState ( Qt::Checked );
@@ -1063,7 +1087,7 @@ void CClientDlg::OnTimerSigMet()
 
         // show message box about feedback issue
         QCheckBox* chb = new QCheckBox ( tr ( "Enable feedback detection" ) );
-        chb->setCheckState ( pSettings->bEnableFeedbackDetection ? Qt::Checked : Qt::Unchecked );
+        chb->setCheckState ( Client.IsEnableFeedbackDetection() ? Qt::Checked : Qt::Unchecked );
         QMessageBox msgbox;
         msgbox.setText ( tr ( "Audio feedback or loud signal detected.\n\n"
                               "We muted your channel and activated 'Mute Myself'. Please solve "
@@ -1073,7 +1097,7 @@ void CClientDlg::OnTimerSigMet()
         msgbox.setDefaultButton ( QMessageBox::Ok );
         msgbox.setCheckBox ( chb );
 
-        QObject::connect ( chb, &QCheckBox::stateChanged, this, &CClientDlg::OnFeedbackDetectionChanged );
+        QObject::connect ( chb, &QCheckBox::stateChanged, &ClientSettingsDlg, &CClientSettingsDlg::OnClientFeedbackDetectionChanged );
 
         msgbox.exec();
     }
@@ -1084,7 +1108,7 @@ void CClientDlg::OnTimerBuffersLED()
     CMultiColorLED::ELightColor eCurStatus;
 
     // get and reset current buffer state and set LED from that flag
-    if ( pClient->GetAndResetbJitterBufferOKFlag() )
+    if ( Client.GetAndResetbJitterBufferOKFlag() )
     {
         eCurStatus = CMultiColorLED::RL_GREEN;
     }
@@ -1100,13 +1124,13 @@ void CClientDlg::OnTimerBuffersLED()
 void CClientDlg::OnTimerPing()
 {
     // send ping message to the server
-    pClient->CreateCLPingMes();
+    Client.CreateCLPingMes();
 }
 
 void CClientDlg::OnPingTimeResult ( int iPingTime )
 {
     // calculate overall delay
-    const int iOverallDelayMs = pClient->EstimatedOverallDelay ( iPingTime );
+    const int iOverallDelayMs = Client.EstimatedOverallDelay ( iPingTime );
 
     // color definition: <= 43 ms green, <= 68 ms yellow, otherwise red
     CMultiColorLED::ELightColor eOverallDelayLEDColor;
@@ -1146,7 +1170,7 @@ void CClientDlg::OnTimerCheckAudioDeviceOk()
     // timeout to check if a valid device is selected and if we do not have
     // fundamental settings errors (in which case the GUI would only show that
     // it is trying to connect the server which does not help to solve the problem (#129))
-    if ( !pClient->IsCallbackEntered() )
+    if ( !Client.IsCallbackEntered() )
     {
         QMessageBox::warning ( this,
                                APP_NAME,
@@ -1155,14 +1179,14 @@ void CClientDlg::OnTimerCheckAudioDeviceOk()
     }
 }
 
-void CClientDlg::OnTimerDetectFeedback() { bDetectFeedback = false; }
+void CClientDlg::OnFeedbackDetectionExpired() { bDetectingFeedback = false; }
 
 void CClientDlg::OnSoundDeviceChanged ( QString strError )
 {
     if ( !strError.isEmpty() )
     {
         // the sound device setup has a problem, disconnect any active connection
-        if ( pClient->IsRunning() )
+        if ( Client.IsRunning() )
         {
             Disconnect();
         }
@@ -1172,15 +1196,15 @@ void CClientDlg::OnSoundDeviceChanged ( QString strError )
     }
 
     // if the check audio device timer is running, it must be restarted on a device change
-    if ( TimerCheckAudioDeviceOk.isActive() )
+    if ( TimerDisplaySoundcardPopup.isActive() )
     {
-        TimerCheckAudioDeviceOk.start ( CHECK_AUDIO_DEV_OK_TIME_MS );
+        TimerDisplaySoundcardPopup.start ( CHECK_AUDIO_DEV_OK_TIME_MS );
     }
 
-    if ( pSettings->bEnableFeedbackDetection && TimerDetectFeedback.isActive() )
+    if ( Client.IsEnableFeedbackDetection() && TimerFeedbackDetectionPeriod.isActive() ) // why only while it's active?
     {
-        TimerDetectFeedback.start ( DETECT_FEEDBACK_TIME_MS );
-        bDetectFeedback = true;
+        TimerFeedbackDetectionPeriod.start ( DETECT_FEEDBACK_TIME_MS );
+        bDetectingFeedback = true;
     }
 
     // update the settings dialog
@@ -1196,15 +1220,15 @@ void CClientDlg::OnCLPingTimeWithNumClientsReceived ( CHostAddress InetAddr, int
 void CClientDlg::Connect ( const QString& strSelectedAddress, const QString& strMixerBoardLabel )
 {
     // set address and check if address is valid
-    if ( pClient->SetServerAddr ( strSelectedAddress ) )
+    if ( Client.SetServerAddr ( strSelectedAddress ) )
     {
         // try to start client, if error occurred, do not go in
         // running state but show error message
         try
         {
-            if ( !pClient->IsRunning() )
+            if ( !Client.IsRunning() )
             {
-                pClient->Start();
+                Client.Start();
             }
         }
 
@@ -1215,29 +1239,34 @@ void CClientDlg::Connect ( const QString& strSelectedAddress, const QString& str
             return;
         }
 
-        // hide label connect to server
-        lblConnectToServer->hide();
-        lbrInputLevelL->setEnabled ( true );
-        lbrInputLevelR->setEnabled ( true );
+        SetConnectedGUI ( strMixerBoardLabel );
+    }
+}
 
-        // change connect button text to "disconnect"
-        butConnect->setText ( tr ( "&Disconnect" ) );
+void CClientDlg::SetConnectedGUI ( const QString& strMixerBoardLabel )
+{
+    // hide label connect to server
+    lblConnectToServer->hide();
+    lbrInputLevelL->setEnabled ( true );
+    lbrInputLevelR->setEnabled ( true );
 
-        // set server name in audio mixer group box title
-        MainMixerBoard->SetServerName ( strMixerBoardLabel );
+    // change connect button text to "disconnect"
+    butConnect->setText ( tr ( "&Disconnect" ) );
 
-        // start timer for level meter bar and ping time measurement
-        TimerSigMet.start ( LEVELMETER_UPDATE_TIME_MS );
-        TimerBuffersLED.start ( BUFFER_LED_UPDATE_TIME_MS );
-        TimerPing.start ( PING_UPDATE_TIME_MS );
-        TimerCheckAudioDeviceOk.start ( CHECK_AUDIO_DEV_OK_TIME_MS ); // is single shot timer
+    // set server name in audio mixer group box title
+    MainMixerBoard->SetServerName ( strMixerBoardLabel );
 
-        // audio feedback detection
-        if ( pSettings->bEnableFeedbackDetection )
-        {
-            TimerDetectFeedback.start ( DETECT_FEEDBACK_TIME_MS ); // single shot timer
-            bDetectFeedback = true;
-        }
+    // start timer for level meter bar and ping time measurement
+    TimerSigMet.start ( LEVELMETER_UPDATE_TIME_MS );
+    TimerBuffersLED.start ( BUFFER_LED_UPDATE_TIME_MS );
+    TimerPing.start ( PING_UPDATE_TIME_MS );
+    TimerDisplaySoundcardPopup.start ( CHECK_AUDIO_DEV_OK_TIME_MS ); // is single shot timer
+
+    // audio feedback detection
+    if ( Client.IsEnableFeedbackDetection() )
+    {
+        TimerFeedbackDetectionPeriod.start ( DETECT_FEEDBACK_TIME_MS ); // single shot timer
+        bDetectingFeedback = true;
     }
 }
 
@@ -1247,9 +1276,9 @@ void CClientDlg::Disconnect()
     // the stopped message, the client is already stopped but the
     // connect/disconnect button and other GUI controls must be
     // updated
-    if ( pClient->IsRunning() )
+    if ( Client.IsRunning() )
     {
-        pClient->Stop();
+        Client.Stop();
     }
 
     // change connect button text to "connect"
@@ -1271,9 +1300,9 @@ void CClientDlg::Disconnect()
     // stop other timers
     TimerBuffersLED.stop();
     TimerPing.stop();
-    TimerCheckAudioDeviceOk.stop();
-    TimerDetectFeedback.stop();
-    bDetectFeedback = false;
+    TimerDisplaySoundcardPopup.stop();
+    TimerFeedbackDetectionPeriod.stop();
+    bDetectingFeedback = false;
 
     //### TODO: BEGIN ###//
     // is this still required???
@@ -1325,8 +1354,20 @@ void CClientDlg::UpdateDisplay()
     }
 }
 
-void CClientDlg::SetGUIDesign ( const EGUIDesign eNewDesign )
+void CClientDlg::OnGUIDesignChanged ( const EGUIDesign value )
 {
+    Client.SetGUIDesign ( value );
+    UpdateGUIDesign();
+
+    // also apply GUI design to child GUI controls
+    MainMixerBoard->SetGUIDesign ( value );
+    UpdateMixerBoardDeco ( MainMixerBoard->GetRecorderState(), value );
+}
+
+void CClientDlg::UpdateGUIDesign()
+{
+    const EGUIDesign eNewDesign = Client.GetGUIDesign();
+
     // remove any styling from the mixer board - reapply after changing skin
     MainMixerBoard->setStyleSheet ( "" );
 
@@ -1387,13 +1428,21 @@ void CClientDlg::SetGUIDesign ( const EGUIDesign eNewDesign )
         ledDelay->SetType ( CMultiColorLED::MT_INDICATOR );
         break;
     }
-
-    // also apply GUI design to child GUI controls
-    MainMixerBoard->SetGUIDesign ( eNewDesign );
 }
 
-void CClientDlg::SetMeterStyle ( const EMeterStyle eNewMeterStyle )
+void CClientDlg::OnMeterStyleChanged ( const EMeterStyle eNewMeterStyle )
 {
+    Client.SetMeterStyle ( eNewMeterStyle );
+    UpdateMeterStyle();
+
+    // also apply MeterStyle to child GUI controls
+    MainMixerBoard->SetMeterStyle ( eNewMeterStyle );
+}
+
+void CClientDlg::UpdateMeterStyle()
+{
+    const EMeterStyle eNewMeterStyle = Client.GetMeterStyle();
+
     // apply MeterStyle to current window
     switch ( eNewMeterStyle )
     {
@@ -1422,30 +1471,22 @@ void CClientDlg::SetMeterStyle ( const EMeterStyle eNewMeterStyle )
         lbrInputLevelR->SetLevelMeterType ( CLevelMeter::MT_LED_ROUND_BIG );
         break;
     }
-
-    // also apply MeterStyle to child GUI controls
-    MainMixerBoard->SetMeterStyle ( eNewMeterStyle );
 }
 
 void CClientDlg::OnRecorderStateReceived ( const ERecorderState newRecorderState )
 {
     MainMixerBoard->SetRecorderState ( newRecorderState );
-    SetMixerBoardDeco ( newRecorderState, pClient->GetGUIDesign() );
+    UpdateMixerBoardDeco ( newRecorderState, Client.GetGUIDesign() );
 }
 
-void CClientDlg::OnGUIDesignChanged()
-{
-    SetGUIDesign ( pClient->GetGUIDesign() );
-    SetMixerBoardDeco ( MainMixerBoard->GetRecorderState(), pClient->GetGUIDesign() );
-}
-
-void CClientDlg::OnMeterStyleChanged() { SetMeterStyle ( pClient->GetMeterStyle() ); }
-
-void CClientDlg::SetMixerBoardDeco ( const ERecorderState newRecorderState, const EGUIDesign eNewDesign )
+void CClientDlg::UpdateMixerBoardDeco ( const ERecorderState newRecorderState, const EGUIDesign eNewDesign )
 {
     // return if no change
     if ( ( newRecorderState == eLastRecorderState ) && ( eNewDesign == eLastDesign ) )
+    {
         return;
+    }
+
     eLastRecorderState = newRecorderState;
     eLastDesign        = eNewDesign;
 

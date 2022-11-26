@@ -301,14 +301,13 @@ CONNECTION LESS MESSAGES
     - "is permanent" is a flag which indicates if the server is permanent
       online or not. If this value is any value <> 0 indicates that the server
       is permanent online.
-    - "server internal address" represents the IPv4 address as a dotted quad to
-      be used by clients with the same external IP address as the server.
-      NOTE: In the PROTMESSID_CLM_SERVER_LIST list, this field will be empty
-      as only the initial IP address should be used by the client.  Where
-      necessary, that value will contain the server internal address.
-      When running a directory and a registered server behind the same
-      NAT, this field is used the other way round: It will contain the public
-      IP in this case which will be served to clients from the Internet.
+    - for a server registering with a non-local directory, no "--serverpublicip"
+      should be given - the values in the CLM message must be determined from the
+      server local IP (possibly specified using --serverbindip) and --port argument
+      and its external details from the IP layer. For a server registering with
+      a local directory, "--serverpublicip" must be used to give the external IP
+      address if the server should be externally accessible, as the IP layer details
+      are the internal values. No means exists to specify a different external port.
 
 
 - PROTMESSID_CLM_REGISTER_SERVER_EX: Register a server, providing extended server
@@ -333,7 +332,10 @@ CONNECTION LESS MESSAGES
     +--------------------+--------------------------------+
 
     - "PROTMESSID_CLM_REGISTER_SERVER" means that exactly the same message body
-      of the PROTMESSID_CLM_REGISTER_SERVER message is used
+      of the PROTMESSID_CLM_REGISTER_SERVER message is used.
+      Where the PROTMESSID_CLM_REQ_SERVER_LIST IP layer address matches the list entry
+      external address, then the connection should be made on the internal address.
+      Where the addresses differ, then the connection should be made on the external address.
 
 
 - PROTMESSID_CLM_RED_SERVER_LIST: Reduced server list message (to have less UDP fragmentation)

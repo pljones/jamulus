@@ -44,7 +44,7 @@ class CAnalyzerConsole : public CBaseDlg
     Q_OBJECT
 
 public:
-    CAnalyzerConsole ( CClient* pNCliP, QWidget* parent = nullptr );
+    CAnalyzerConsole ( CClient&, QWidget* parent = nullptr );
 
 protected:
     virtual void showEvent ( QShowEvent* );
@@ -54,7 +54,7 @@ protected:
     void DrawErrorRateTrace();
     int  CalcYPosInGraph ( const double dAxisMin, const double dAxisMax, const double dValue ) const;
 
-    CClient* pClient;
+    CClient& Client;
 
     QTabWidget* pMainTabWidget;
     QWidget*    pTabWidgetBufErrRate;

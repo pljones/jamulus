@@ -45,6 +45,7 @@
 #include "recorder/jamcontroller.h"
 
 #include "threadpool.h"
+#include "options.h"
 
 /* Definitions ****************************************************************/
 // no valid channel number
@@ -85,26 +86,7 @@ class CServer : public QObject, public CServerSlots<MAX_NUM_CHANNELS>
     Q_OBJECT
 
 public:
-    CServer ( const int          iNewMaxNumChan,
-              const QString&     strLoggingFileName,
-              const QString&     strServerBindIP,
-              const quint16      iPortNumber,
-              const quint16      iQosNumber,
-              const QString&     strHTMLStatusFileName,
-              const QString&     strDirectoryAddress,
-              const QString&     strServerListFileName,
-              const QString&     strServerInfo,
-              const QString&     strServerListFilter,
-              const QString&     strServerPublicIP,
-              const QString&     strNewWelcomeMessage,
-              const QString&     strRecordingDirName,
-              const bool         bNDisconnectAllClientsOnQuit,
-              const bool         bNUseDoubleSystemFrameSize,
-              const bool         bNUseMultithreading,
-              const bool         bDisableRecording,
-              const bool         bNDelayPan,
-              const bool         bNEnableIPv6,
-              const ELicenceType eNLicenceType );
+    CServer();
 
     virtual ~CServer();
 
@@ -124,50 +106,113 @@ public:
 
     void CreateCLServerListReqVerAndOSMes ( const CHostAddress& InetAddr ) { ConnLessProtocol.CreateCLReqVersionAndOSMes ( InetAddr ); }
 
-    // IPv6 Enabled
-    bool IsIPv6Enabled() { return bEnableIPv6; }
-
     // GUI settings ------------------------------------------------------------
+    inline QByteArray GetMainWindowGeometry() const { return AllOptions.bo_winposmain.value; }
+    void              SetMainWindowGeometry ( const QByteArray value )
+    {
+        if ( AllOptions.bo_winposmain.value != value )
+        {
+            AllOptions.bo_winposmain.value = value;
+        }
+    }
+
     int GetClientNumAudioChannels ( const int iChanNum ) { return vecChannels[iChanNum].GetNumAudioChannels(); }
 
-    void           SetDirectoryType ( const EDirectoryType eNCSAT ) { ServerListManager.SetDirectoryType ( eNCSAT ); }
-    EDirectoryType GetDirectoryType() { return ServerListManager.GetDirectoryType(); }
-    bool           IsDirectory() { return ServerListManager.IsDirectory(); }
-    ESvrRegStatus  GetSvrRegStatus() { return ServerListManager.GetSvrRegStatus(); }
+    inline QString GetDirectoryAddress() const { return ServerListManager.GetDirectoryAddress(); }
+    inline void    SetDirectoryAddress ( const QString& sNDirectoryAddress ) { ServerListManager.SetDirectoryAddress ( sNDirectoryAddress ); }
 
-    void             SetServerName ( const QString& strNewName ) { ServerListManager.SetServerName ( strNewName ); }
-    QString          GetServerName() { return ServerListManager.GetServerName(); }
-    void             SetServerCity ( const QString& strNewCity ) { ServerListManager.SetServerCity ( strNewCity ); }
-    QString          GetServerCity() { return ServerListManager.GetServerCity(); }
-    void             SetServerCountry ( const QLocale::Country eNewCountry ) { ServerListManager.SetServerCountry ( eNewCountry ); }
-    QLocale::Country GetServerCountry() { return ServerListManager.GetServerCountry(); }
+    inline EDirectoryType GetDirectoryType() const { return ServerListManager.GetDirectoryType(); }
+    inline void           SetDirectoryType ( const EDirectoryType eNCSAT ) { ServerListManager.SetDirectoryType ( eNCSAT ); }
 
-    bool    GetRecorderInitialised() { return JamController.GetRecorderInitialised(); }
-    void    SetEnableRecording ( bool bNewEnableRecording );
-    bool    GetDisableRecording() { return bDisableRecording; }
-    QString GetRecorderErrMsg() { return JamController.GetRecorderErrMsg(); }
-    bool    GetRecordingEnabled() { return JamController.GetRecordingEnabled(); }
-    void    RequestNewRecording() { JamController.RequestNewRecording(); }
-    void    SetRecordingDir ( QString newRecordingDir )
+    inline QString GetServerListFileName() const { return ServerListManager.GetServerListFileName(); }
+    inline bool    SetServerListFileName ( const QString strFilename ) { return ServerListManager.SetServerListFileName ( strFilename ); }
+
+    bool                 IsADirectory() const { return ServerListManager.IsADirectory(); }
+    inline ESvrRegStatus GetSvrRegStatus() const { return ServerListManager.GetSvrRegStatus(); }
+
+    // TODO: make the command line parser put these into separate allOption values - i.e. the same place the inifile reader puts them
+    inline void             SetServerName ( const QString& strNewName ) { ServerListManager.SetServerName ( strNewName ); }
+    inline QString          GetServerName() const { return ServerListManager.GetServerName(); }
+    inline void             SetServerCity ( const QString& strNewCity ) { ServerListManager.SetServerCity ( strNewCity ); }
+    inline QString          GetServerCity() const { return ServerListManager.GetServerCity(); }
+    inline void             SetServerCountry ( const QLocale::Country eNewCountry ) { ServerListManager.SetServerCountry ( eNewCountry ); }
+    inline QLocale::Country GetServerCountry() const { return ServerListManager.GetServerCountry(); }
+
+    void           SetWelcomeMessage ( const QString& strNWelcMess );
+    inline QString GetWelcomeMessage() const { return strWelcomeMessage; }
+
+    inline QString GetLanguage() const { return AllOptions.so_language.value; }
+    void           SetLanguage ( const QString value )
     {
-        JamController.SetRecordingDir ( newRecordingDir, iServerFrameSizeSamples, bDisableRecording );
+        if ( AllOptions.so_language.value != value )
+        {
+            AllOptions.so_language.value = value;
+            emit LanguageChanged ( AllOptions.so_language.value, AllOptions.fo_notranslation.value );
+        }
     }
-    QString GetRecordingDir() { return JamController.GetRecordingDir(); }
 
-    void    SetWelcomeMessage ( const QString& strNWelcMess );
-    QString GetWelcomeMessage() { return strWelcomeMessage; }
+    inline bool IsAutoRunMinimized() const { return AllOptions.fo_startminimized.value; }
+    void        SetAutoRunMinimized ( const bool NAuRuMin )
+    {
+        if ( AllOptions.fo_startminimized.value != NAuRuMin )
+        {
+            AllOptions.fo_startminimized.value = NAuRuMin;
+        }
+    }
 
-    void    SetDirectoryAddress ( const QString& sNDirectoryAddress ) { ServerListManager.SetDirectoryAddress ( sNDirectoryAddress ); }
-    QString GetDirectoryAddress() { return ServerListManager.GetDirectoryAddress(); }
+    inline bool IsEnableDelayPanning() const { return AllOptions.fo_delaypan.value; }
+    void        SetEnableDelayPanning ( const bool bDelayPanningOn )
+    {
+        if ( AllOptions.fo_delaypan.value != bDelayPanningOn )
+        {
+            AllOptions.fo_delaypan.value = bDelayPanningOn;
+        }
+    }
 
-    QString GetServerListFileName() { return ServerListManager.GetServerListFileName(); }
-    bool    SetServerListFileName ( QString strFilename ) { return ServerListManager.SetServerListFileName ( strFilename ); }
+    inline bool IsIPv6Enabled() const { return AllOptions.fo_ipv6.value; }
 
-    void SetAutoRunMinimized ( const bool NAuRuMin ) { bAutoRunMinimized = NAuRuMin; }
-    bool GetAutoRunMinimized() { return bAutoRunMinimized; }
+    // TODO: make the jam recorder take care of itself (and make a nojamrecorder CONFIG)
+    inline bool    GetRecorderInitialised() { return JamController.GetRecorderInitialised(); }
+    void           SetEnableRecording ( bool bNewEnableRecording );
+    inline QString GetRecorderErrMsg() { return JamController.GetRecorderErrMsg(); }
+    inline bool    GetRecordingEnabled() { return JamController.GetRecordingEnabled(); }
+    inline void    RequestNewRecording() { JamController.RequestNewRecording(); }
+    inline void    SetRecordingDir ( QString newRecordingDir )
+    {
+        JamController.SetRecordingDir ( newRecordingDir, iServerFrameSizeSamples, AllOptions.fo_norecord.value );
+    }
+    inline QString GetRecordingDir() { return JamController.GetRecordingDir(); }
 
-    void SetEnableDelayPanning ( bool bDelayPanningOn ) { bDelayPan = bDelayPanningOn; }
-    bool IsDelayPanningEnabled() { return bDelayPan; }
+signals:
+    void Started();
+    void Stopped();
+    void ClientDisconnected ( const int iChID );
+    void SvrRegStatusChanged();
+    void AudioFrame ( const int              iChID,
+                      const QString          stChName,
+                      const CHostAddress     RecHostAddr,
+                      const int              iNumAudChan,
+                      const CVector<int16_t> vecsData );
+
+    void CLVersionAndOSReceived ( CHostAddress InetAddr, COSUtil::EOpSystemType eOSType, QString strVersion );
+
+    // Settings updates
+    void LanguageChanged ( const QString strLanguage, const bool noTranslation );
+
+    // pass through from jam controller
+    void RestartRecorder();
+    void StopRecorder();
+    void RecordingSessionStarted ( QString sessionDir );
+    void EndRecorderThread();
+
+public slots:
+    void OnNewConnection ( int iChID, int iTotChans, CHostAddress RecHostAddr );
+
+    void OnServerFull ( CHostAddress RecHostAddr );
+
+    void OnProtocolCLMessageReceived ( int iRecID, CVector<uint8_t> vecbyMesBodyData, CHostAddress RecHostAddr );
+
+    void OnProtocolMessageReceived ( int iRecCounter, int iRecID, CVector<uint8_t> vecbyMesBodyData, CHostAddress RecHostAddr );
 
 protected:
     // access functions for actual channels
@@ -208,24 +253,25 @@ protected:
 
     void CreateAndSendRecorderStateForAllConChannels();
 
-    // if server mode is normal or double system frame size
-    bool bUseDoubleSystemFrameSize;
-    int  iServerFrameSizeSamples;
-
-    // variables needed for multithreading support
-    bool                       bUseMultithreading;
-    int                        iMaxNumThreads;
-    CVector<std::future<void>> Futures;
-
     bool CreateLevelsForAllConChannels ( const int                       iNumClients,
                                          const CVector<int>&             vecNumAudioChannels,
                                          const CVector<CVector<int16_t>> vecvecsData,
                                          CVector<uint16_t>&              vecLevelsOut );
 
+    int iServerFrameSizeSamples;
+
+    // channel level update frame interval counter
+    int iFrameCount;
+
+    // variables needed for multithreading support
+    int                        iMaxNumThreads;
+    CVector<std::future<void>> Futures;
+
+    std::unique_ptr<CThreadPool> pThreadPool;
+
     // do not use the vector class since CChannel does not have appropriate
     // copy constructor/operator
     CChannel vecChannels[MAX_NUM_CHANNELS];
-    int      iMaxNumChannels;
 
     int    iCurNumChannels;
     int    vecChannelOrder[MAX_NUM_CHANNELS];
@@ -265,21 +311,17 @@ protected:
     CVector<CVector<float>>   vecvecfIntermediateProcBuf;
     CVector<CVector<uint8_t>> vecvecbyCodedData;
 
+    // HTML file server status
+    bool bWriteStatusHTMLFile = false;
+
+    // Server welcome message chat text to send
+    QString strWelcomeMessage;
+
     // Channel levels
     CVector<uint16_t> vecChannelLevels;
 
     // actual working objects
     CHighPrioSocket Socket;
-
-    // logging
-    CServerLogging Logging;
-
-    // channel level update frame interval counter
-    int iFrameCount;
-
-    // HTML file server status
-    bool    bWriteStatusHTMLFile;
-    QString strServerHTMLFileListName;
 
     CHighPrecisionTimer HighPrecisionTimer;
 
@@ -288,57 +330,17 @@ protected:
 
     // jam recorder
     recorder::CJamController JamController;
-    bool                     bDisableRecording;
 
-    // GUI settings
-    bool bAutoRunMinimized;
-
-    // for delay panning
-    bool bDelayPan;
-
-    // enable IPv6
-    bool bEnableIPv6;
+    // logging
+    CServerLogging Logging;
 
     // messaging
-    QString      strWelcomeMessage;
-    ELicenceType eLicenceType;
-    bool         bDisconnectAllClientsOnQuit;
+    CSignalHandler* pSignalHandler = CSignalHandler::getSingletonP();
 
-    CSignalHandler* pSignalHandler;
-
-    std::unique_ptr<CThreadPool> pThreadPool;
-
-signals:
-    void Started();
-    void Stopped();
-    void ClientDisconnected ( const int iChID );
-    void SvrRegStatusChanged();
-    void AudioFrame ( const int              iChID,
-                      const QString          stChName,
-                      const CHostAddress     RecHostAddr,
-                      const int              iNumAudChan,
-                      const CVector<int16_t> vecsData );
-
-    void CLVersionAndOSReceived ( CHostAddress InetAddr, COSUtil::EOpSystemType eOSType, QString strVersion );
-
-    // pass through from jam controller
-    void RestartRecorder();
-    void StopRecorder();
-    void RecordingSessionStarted ( QString sessionDir );
-    void EndRecorderThread();
-
-public slots:
+private slots:
     void OnTimer();
 
-    void OnNewConnection ( int iChID, int iTotChans, CHostAddress RecHostAddr );
-
-    void OnServerFull ( CHostAddress RecHostAddr );
-
     void OnSendCLProtMessage ( CHostAddress InetAddr, CVector<uint8_t> vecMessage );
-
-    void OnProtocolCLMessageReceived ( int iRecID, CVector<uint8_t> vecbyMesBodyData, CHostAddress RecHostAddr );
-
-    void OnProtocolMessageReceived ( int iRecCounter, int iRecID, CVector<uint8_t> vecbyMesBodyData, CHostAddress RecHostAddr );
 
     void OnCLPingReceived ( CHostAddress InetAddr, int iMs ) { ConnLessProtocol.CreateCLPingMes ( InetAddr, iMs ); }
 
@@ -349,8 +351,8 @@ public slots:
 
     void OnCLSendEmptyMes ( CHostAddress TargetInetAddr )
     {
-        // only send empty message if not a directory
-        if ( !ServerListManager.IsDirectory() )
+        // only send empty message if not a directory server
+        if ( !ServerListManager.IsADirectory() )
         {
             ConnLessProtocol.CreateCLEmptyMes ( TargetInetAddr );
         }

@@ -360,7 +360,6 @@ public:
 
 /* Prototypes for global functions ********************************************/
 // command line parsing, TODO do not declare functions globally but in a class
-QString UsageArguments ( char** argv );
 
 bool GetFlagArgument ( char** argv, int& i, QString strShortOpt, QString strLongOpt );
 

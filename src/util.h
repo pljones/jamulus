@@ -145,6 +145,8 @@ public:
         std::vector<TData>::back() = tI;
     }
 
+    int Remove ( const TData& strOldValue );
+
     int StringFiFoWithCompare ( const QString strNewValue, const bool bDoAdding = true );
 
     // this function simply converts the type of size to integer
@@ -191,23 +193,55 @@ int CVector<TData>::StringFiFoWithCompare ( const QString strNewValue, const boo
         iTempListCnt    = 1;
     }
 
+    // check if we still have space in our data storage...
+    for ( int iIdx = 0; iTempListCnt < iVectorSize && iIdx < iVectorSize; iIdx++ )
+    {
+        // only add old element if it is not the same as the
+        // selected one
+        if ( std::vector<TData>::operator[] ( iIdx ).compare ( strNewValue ) )
+        {
+            vstrTempList[iTempListCnt] = std::vector<TData>::operator[] ( iIdx );
+
+            iTempListCnt++;
+        }
+        else
+        {
+            iOldIndex = iIdx;
+        }
+    }
+
+    // copy new generated list to data base
+    *this = vstrTempList;
+
+    return iOldIndex;
+}
+
+template<class TData>
+int CVector<TData>::Remove ( const TData& strOldValue )
+{
+    const int iVectorSize = Size();
+
+    CVector<QString> vstrTempList ( iVectorSize, "" );
+
+    // init with illegal index per definition
+    int iOldIndex = INVALID_INDEX;
+
+    // init temporary list count (may be overwritten later on)
+    int iTempListCnt = 0;
+
     for ( int iIdx = 0; iIdx < iVectorSize; iIdx++ )
     {
-        // first check if we still have space in our data storage
-        if ( iTempListCnt < iVectorSize )
+        if ( std::vector<TData>::operator[] ( iIdx ).compare ( strOldValue ) )
         {
-            // only add old element if it is not the same as the
-            // selected one
-            if ( std::vector<TData>::operator[] ( iIdx ).compare ( strNewValue ) )
-            {
-                vstrTempList[iTempListCnt] = std::vector<TData>::operator[] ( iIdx );
+            // only add old element if it is not the same as the one to be removed
+            vstrTempList[iTempListCnt] = std::vector<TData>::operator[] ( iIdx );
 
-                iTempListCnt++;
-            }
-            else
-            {
-                iOldIndex = iIdx;
-            }
+            iTempListCnt++;
+        }
+        else
+        {
+            // return the old index of the removed item
+            iOldIndex = iIdx;
         }
     }
 
