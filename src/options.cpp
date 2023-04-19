@@ -521,7 +521,7 @@ JamulusOptions::JamulusOptions() :
         Option::Early | Option::Common,
         { "-i" },
         { "--inifile" },
-        "initialization file name (not supported with both --server and --nogui)",
+        "initialization file name (not supported when --server and --nogui are used together)",
         "- initialization file name: %1",
         "Jamulus.ini",
         [] ( StringOption& ref, QList<QString> args, QString& successmsg, QString& errmsg ) {
@@ -606,7 +606,7 @@ JamulusOptions::JamulusOptions() :
         Option::Common | Option::Setting,
         {},
         { "--jsonrpcbindip" },
-        "network interface IP address the JSON-RPC Server will bind to (rather than localhost)",
+        "network interface IP address the JSON-RPC Server will bind to (defaults to localhost)",
         "- JSON-RPC Server will bind to interface with IP: %1 (if enabled)",
         DEFAULT_JSON_RPC_LISTEN_ADDRESS,
         [] ( StringOption& ref, QList<QString> args, QString& successmsg, QString& errmsg ) {

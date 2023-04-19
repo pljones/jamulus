@@ -1084,8 +1084,8 @@ struct JamulusOptions
     IntOption       io_qos;
     FlagOption      fo_discononquit;
     StringOption    so_directory;
-    IntOption       io_directorytype;
     StringOption    so_directoryDeprecated;
+    IntOption       io_directorytype;
     StringOption    so_serverlistfile;
     StringVecOption vs_serverlistfilter;
     FlagOption      fo_fastupdate;
