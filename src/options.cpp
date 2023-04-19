@@ -693,14 +693,14 @@ JamulusOptions::JamulusOptions() :
                       "disconnect all Clients on quit",
                       "- disconnect all Clients on quit" ),
 
-    // Directory server ----------------------------------------------------
+    // Directory address ---------------------------------------------------
     so_directory (
         "directoryaddress",
         Option::Server | Option::Setting,
         { "-e" },
-        { "--directory" },
-        "server address of the Directory with which to register (or 'localhost' to act as a Directory)",
-        "- Directory: %1",
+        { "--directoryaddress" },
+        "network address of the Directory with which to register (or 'localhost' to run as a Directory)",
+        "- register with Directory at address: %1",
         QString(),
         [] ( StringOption& ref, QList<QString> args, QString& successmsg, QString& ) {
             ref.value = args.takeFirst();
@@ -793,7 +793,7 @@ JamulusOptions::JamulusOptions() :
         Option::Server | Option::Setting | Option::IsBase64,
         {},
         { "--directoryfile", "--serverlistfile" },
-        "enable server list persistence, set file name",
+        "file to hold server list across Directory restarts. Directories only.",
         "- server list persistence file: %1",
         QString(),
         [] ( StringOption& ref, QList<QString> args, QString& successmsg, QString& errmsg ) {
@@ -2203,14 +2203,14 @@ bool AnyOption::checkServerOptions ( QList<AnyOption*>& parsedOptions, QString& 
     {
         if ( !serverListFile.value.isEmpty() )
         {
-            qWarning() << "Server list persistence file will only take effect when running as a directory server.";
+            qWarning() << "Server list persistence file will only take effect when running as a directory.";
             serverListFile.value = QString();
         }
 
         StringVecOption& serverListFilter = AllOptions.vs_serverlistfilter;
         if ( serverListFilter.value.size() > 0 )
         {
-            qWarning() << "Server list filter will only take effect when running as a directory server.";
+            qWarning() << "Server list filter will only take effect when running as a directory.";
             serverListFilter.value.clear();
         }
     }
@@ -2237,7 +2237,7 @@ bool AnyOption::checkServerOptions ( QList<AnyOption*>& parsedOptions, QString& 
         StringOption& serverPublicIP = AllOptions.so_serverpublicip;
         if ( !serverPublicIP.value.isEmpty() )
         {
-            qInfo() << "Server Public IP will only take effect when registering a server with a directory server.";
+            qInfo() << "Server Public IP will only take effect when registering a server with a directory.";
             // serverPublicIP.value = QString();
         }
     }
