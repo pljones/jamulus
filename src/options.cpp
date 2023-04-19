@@ -736,6 +736,16 @@ JamulusOptions::JamulusOptions() :
             return true;
         } ),
 
+    // Deprecated ----------------------------------------------------------
+    so_directoryDeprecated ( "directoryDeprecated",
+                             Option::Server,
+                             {},
+                             { "--directoryserver", "--centralserver" },
+                             QString(),
+                             so_directory.validText,
+                             QString(),
+                             so_directory.validator ),
+
     // Directory type (client connect dialog / server main tab) ------------
     // +++ needs "backwards compatibility" when reading client settings ++??what about server??
     // < 3.4.7 -> defcentservaddr set directorytype AT_DEFAULT even if centralservaddr set
@@ -776,15 +786,6 @@ JamulusOptions::JamulusOptions() :
 
                            return true;
                        } ),
-
-    // Deprecated ----------------------------------------------------------
-    so_directoryDeprecated ( "directoryDeprecated",
-                             Option::Server,
-                             {},
-                             { "--directoryserver", "--centralserver" },
-                             QString(),
-                             so_directory.validText,
-                             QString() ),
 
     // Server list persistence file ----------------------------------------
     so_serverlistfile (
