@@ -139,6 +139,9 @@ int main ( int argc, char** argv )
     }
 #endif
 
+    // TODO: validate strArgument before assigning - note that empty strings will prevent any settings value being
+    //       used.  Should this cause an empty value or a default to be used?  Message here cannot say setting ignored.
+
     // When adding new options, follow the same order as --help output
 
     // QT docu: argv()[0] is the program name, argv()[1] is the first
@@ -167,6 +170,7 @@ int main ( int argc, char** argv )
         // Initialization file -------------------------------------------------
         if ( GetStringArgument ( argc, argv, i, "-i", "--inifile", strArgument ) )
         {
+            // TODO: validate strArgument before assigning - existing read/write file or file can be created
             strIniFileName = strArgument;
             qInfo() << qUtf8Printable ( QString ( "- initialization file name: %1" ).arg ( strIniFileName ) );
             CommandLineOptions << "--inifile";
@@ -204,6 +208,7 @@ int main ( int argc, char** argv )
         // JSON-RPC secret file name -------------------------------------------
         if ( GetStringArgument ( argc, argv, i, "--jsonrpcsecretfile", "--jsonrpcsecretfile", strArgument ) )
         {
+            // TODO: validate strArgument before assigning - readable file
             strJsonRpcSecretFileName = strArgument;
             qInfo() << qUtf8Printable ( QString ( "- JSON-RPC secret file: %1" ).arg ( strJsonRpcSecretFileName ) );
             CommandLineOptions << "--jsonrpcsecretfile";
@@ -213,6 +218,7 @@ int main ( int argc, char** argv )
         // JSON-RPC bind address ------------------------------------------------
         if ( GetStringArgument ( argc, argv, i, "--jsonrpcbindip", "--jsonrpcbindip", strArgument ) )
         {
+            // TODO: validate strArgument before assigning - valid IP address
             strJsonRpcBindIP = QString ( strArgument );
             qInfo() << qUtf8Printable ( QString ( "- JSON-RPC will bind to: %1 if enabled" ).arg ( strJsonRpcBindIP ) );
             CommandLineOptions << "--jsonrpcbindip";
@@ -261,6 +267,7 @@ int main ( int argc, char** argv )
         // Directory to register with ------------------------------------------
         if ( GetStringArgument ( argc, argv, i, "-e", "--directoryaddress", strArgument ) )
         {
+            // TODO: validate strArgument before assigning - valid IP address (optionally with port)
             strDirectoryAddress = strArgument;
             qInfo() << qUtf8Printable ( QString ( "- register with directory at address: %1" ).arg ( strDirectoryAddress ) );
             CommandLineOptions << "--directoryaddress";
@@ -276,6 +283,7 @@ int main ( int argc, char** argv )
                                  "--directoryserver", // also for backwards compatibility
                                  strArgument ) )
         {
+            // TODO: validate strArgument before assigning - valid IP address (optionally with port)
             strDirectoryAddress = strArgument;
             qInfo() << qUtf8Printable ( QString ( "- register with directory at address: %1" ).arg ( strDirectoryAddress ) );
             CommandLineOptions << "--directoryaddress";
@@ -291,6 +299,7 @@ int main ( int argc, char** argv )
                                  "--directoryfile",
                                  strArgument ) )
         {
+            // TODO: validate strArgument before assigning - existing read/write file or file can be created
             strServerListFileName = strArgument;
             qInfo() << qUtf8Printable ( QString ( "- server list persistence file: %1" ).arg ( strServerListFileName ) );
             CommandLineOptions << "--directoryfile";
@@ -301,6 +310,7 @@ int main ( int argc, char** argv )
         // Server list filter --------------------------------------------------
         if ( GetStringArgument ( argc, argv, i, "-f", "--listfilter", strArgument ) )
         {
+            // TODO: validate strArgument before assigning - list of IP addresses; may include a min version in '[]'
             strServerListFilter = strArgument;
             qInfo() << qUtf8Printable ( QString ( "- server list filter: %1" ).arg ( strServerListFilter ) );
             CommandLineOptions << "--listfilter";
@@ -321,6 +331,7 @@ int main ( int argc, char** argv )
         // Use logging ---------------------------------------------------------
         if ( GetStringArgument ( argc, argv, i, "-l", "--log", strArgument ) )
         {
+            // TODO: validate strArgument before assigning - existing read/write file or file can be created
             strLoggingFileName = strArgument;
             qInfo() << qUtf8Printable ( QString ( "- logging file name: %1" ).arg ( strLoggingFileName ) );
             CommandLineOptions << "--log";
@@ -342,6 +353,7 @@ int main ( int argc, char** argv )
         // HTML status file ----------------------------------------------------
         if ( GetStringArgument ( argc, argv, i, "-m", "--htmlstatus", strArgument ) )
         {
+            // TODO: validate strArgument before assigning - existing read/write file or file can be created
             qWarning() << qUtf8Printable (
                 QString ( "- The HTML status file option (\"--htmlstatus\" or \"-m\") is deprecated and will be removed soon. Please use JSON-RPC "
                           "instead.  See https://github.com/jamulussoftware/jamulus/blob/main/docs/JSON-RPC.md" ) );
@@ -355,6 +367,7 @@ int main ( int argc, char** argv )
         // Server info ---------------------------------------------------------
         if ( GetStringArgument ( argc, argv, i, "-o", "--serverinfo", strArgument ) )
         {
+            // TODO: validate strArgument before assigning - split on ';', get exactly three strings
             strServerInfo = strArgument;
             qInfo() << qUtf8Printable ( QString ( "- server info: %1" ).arg ( strServerInfo ) );
             CommandLineOptions << "--serverinfo";
@@ -370,6 +383,7 @@ int main ( int argc, char** argv )
                                  "--serverpublicip",
                                  strArgument ) )
         {
+            // TODO: validate strArgument before assigning - valid IP address
             strServerPublicIP = strArgument;
             qInfo() << qUtf8Printable ( QString ( "- server public IP: %1" ).arg ( strServerPublicIP ) );
             CommandLineOptions << "--serverpublicip";
@@ -390,6 +404,7 @@ int main ( int argc, char** argv )
         // Recording directory -------------------------------------------------
         if ( GetStringArgument ( argc, argv, i, "-R", "--recording", strArgument ) )
         {
+            // TODO: validate strArgument before assigning - read/write directory
             strRecordingDirName = strArgument;
             qInfo() << qUtf8Printable ( QString ( "- recording directory name: %1" ).arg ( strRecordingDirName ) );
             CommandLineOptions << "--recording";
@@ -428,6 +443,7 @@ int main ( int argc, char** argv )
                                  "--serverbindip",
                                  strArgument ) )
         {
+            // TODO: validate strArgument before assigning - valid IP address
             strServerBindIP = strArgument;
             qInfo() << qUtf8Printable ( QString ( "- server bind IP: %1" ).arg ( strServerBindIP ) );
             CommandLineOptions << "--serverbindip";
@@ -458,6 +474,7 @@ int main ( int argc, char** argv )
         // Server welcome message ----------------------------------------------
         if ( GetStringArgument ( argc, argv, i, "-w", "--welcomemessage", strArgument ) )
         {
+            // TODO: validate strArgument before assigning - read/write file if file exists
             strWelcomeMessage = strArgument;
             qInfo() << qUtf8Printable ( QString ( "- welcome message: %1" ).arg ( strWelcomeMessage ) );
             CommandLineOptions << "--welcomemessage";
@@ -480,6 +497,7 @@ int main ( int argc, char** argv )
         // Connect on startup --------------------------------------------------
         if ( GetStringArgument ( argc, argv, i, "-c", "--connect", strArgument ) )
         {
+            // TODO: validate strArgument before assigning - valid IP address (and optional port)
             strConnOnStartupAddress = NetworkUtil::FixAddress ( strArgument );
             qInfo() << qUtf8Printable ( QString ( "- connect on startup to address: %1" ).arg ( strConnOnStartupAddress ) );
             CommandLineOptions << "--connect";
@@ -528,6 +546,7 @@ int main ( int argc, char** argv )
                                  "--clientname",
                                  strArgument ) )
         {
+            // TODO: validate strArgument before assigning (length?)
             strClientName = strArgument;
             qInfo() << qUtf8Printable ( QString ( "- client name: %1" ).arg ( strClientName ) );
             CommandLineOptions << "--clientname";
@@ -543,6 +562,7 @@ int main ( int argc, char** argv )
                                  "--ctrlmidich",
                                  strArgument ) )
         {
+            // TODO: validate strArgument before assigning - non-empty, syntactically correct string
             strMIDISetup = strArgument;
             qInfo() << qUtf8Printable ( QString ( "- MIDI controller settings: %1" ).arg ( strMIDISetup ) );
             CommandLineOptions << "--ctrlmidich";
@@ -592,6 +612,9 @@ int main ( int argc, char** argv )
         exit ( 1 );
 #endif
     }
+
+    // TODO create settings in default state, if loading from file do that next, then come back here to
+    //      override from command line options, then create client or server
 
     // Dependencies ------------------------------------------------------------
 #ifdef HEADLESS
