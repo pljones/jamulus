@@ -245,20 +245,15 @@ win32 {
         -framework AudioToolbox
 } else:android {
     ANDROID_ABIS = armeabi-v7a arm64-v8a x86 x86_64
+    ANDROID_PACKAGE_SOURCE_DIR = $$PWD/android
+
     ANDROID_VERSION_NAME = $$VERSION
-    # Used by Play Store
-    ANDROID_VERSION_CODE = 0
-    !contains(VERSION, .*dev.*) {
-        exists(".git/config") {
-            ANDROID_VERSION_CODE = $$size($$list($$system(git log --format=format:1,lines)))
-        }
-    }
+    ANDROID_VERSION_CODE = $$size($$list($$system(git log --format=format:1,lines))) # Used by Play Store
     message("Setting ANDROID_VERSION_NAME=$${ANDROID_VERSION_NAME} ANDROID_VERSION_CODE=$${ANDROID_VERSION_CODE}")
 
-    # liboboe requires C++17 for std::timed_mutex
-    CONFIG += c++17
-
-    QT += androidextras
+    versionAtMost(QT_VERSION, 5.99.99) {
+        QT += androidextras
+    }
 
     # enabled only for debugging on android devices
     DEFINES += ANDROIDDEBUG
@@ -266,17 +261,11 @@ win32 {
     target.path = /tmp/your_executable # path on device
     INSTALLS += target
 
-    HEADERS += src/sound/oboe/sound.h
-
-    SOURCES += src/sound/oboe/sound.cpp \
-        src/android/androiddebug.cpp
-
     LIBS += -lOpenSLES
-    ANDROID_PACKAGE_SOURCE_DIR = $$PWD/android
-    DISTFILES += android/AndroidManifest.xml
 
-    # if compiling for android you need to use Oboe library which is included as a git submodule
-    # make sure you git pull with submodules to pull the latest Oboe library
+
+    # For android, Jamulus needs to use the Oboe library, which is included as a git submodule.
+    # Make sure you git pull with submodules to pull the latest Oboe library
     OBOE_SOURCES = $$files(libs/oboe/src/*.cpp, true)
     OBOE_HEADERS = $$files(libs/oboe/src/*.h, true)
 
@@ -288,10 +277,18 @@ win32 {
         libs/oboe/LICENSE \
         libs/oboe/README
 
+    # liboboe requires C++17 for std::timed_mutex
+    CONFIG += c++17
+
+
     INCLUDEPATH += $$INCLUDEPATH_OBOE
-    HEADERS += $$OBOE_HEADERS
-    SOURCES += $$OBOE_SOURCES
-    DISTFILES += $$DISTFILES_OBOE
+    HEADERS += src/sound/oboe/sound.h \
+        $$OBOE_HEADERS
+    SOURCES += src/sound/oboe/sound.cpp \
+        src/android/androiddebug.cpp \
+        $$OBOE_SOURCES
+    DISTFILES += android/AndroidManifest.xml \
+        $$DISTFILES_OBOE
 } else:unix {
     # we want to compile with C++11
     CONFIG += c++11
