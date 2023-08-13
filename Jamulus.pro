@@ -408,7 +408,8 @@ HEADERS += src/plugins/audioreverb.h \
         src/testbench.h
 }
 
-HEADERS_GUI = src/serverdlg.h
+HEADERS_GUI = src/serverdlg.h \
+    src/ui.h
 
 !contains(CONFIG, "serveronly") {
     HEADERS_GUI += src/audiomixerboard.h \
