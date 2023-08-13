@@ -39,10 +39,12 @@
 #include <QMenu>
 #include <QMutex>
 #include <QTextBoundaryFinder>
+#include <QToolTip>
 #include "global.h"
 #include "util.h"
 #include "levelmeter.h"
 #include "settings.h"
+#include "ui.h"
 
 /* Classes ********************************************************************/
 class CChannelFader : public QObject
@@ -114,10 +116,10 @@ protected:
     QCheckBox* pcbGroup;
     QMenu*     pGroupPopupMenu;
 
-    QGroupBox* pLabelInstBox;
-    QLabel*    plblLabel;
-    QLabel*    plblInstrument;
-    QLabel*    plblCountryFlag;
+    CGGroupBox* pLabelInstBox;
+    QLabel*     plblLabel;
+    QLabel*     plblInstrument;
+    QLabel*     plblCountryFlag;
 
     CChannelInfo cReceivedChanInfo;
 
