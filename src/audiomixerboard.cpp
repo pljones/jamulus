@@ -49,7 +49,7 @@ CChannelFader::CChannelFader ( QWidget* pNW ) :
     pcbSolo      = new QCheckBox ( tr ( "Solo" ), pMuteSoloBox );
     pcbGroup     = new QCheckBox ( "", pMuteSoloBox );
 
-    pLabelInstBox   = new QGroupBox ( pFrame );
+    pLabelInstBox   = new CGGroupBox ( pFrame );
     plblLabel       = new QLabel ( "", pFrame );
     plblInstrument  = new QLabel ( pFrame );
     plblCountryFlag = new QLabel ( pFrame );
@@ -197,6 +197,11 @@ CChannelFader::CChannelFader ( QWidget* pNW ) :
     QObject::connect ( pcbSolo, &QCheckBox::stateChanged, this, &CChannelFader::soloStateChanged );
 
     QObject::connect ( pcbGroup, &QCheckBox::stateChanged, this, &CChannelFader::OnGroupStateChanged );
+
+    QObject::connect ( pLabelInstBox, &CGGroupBox::tapAndHoldGestureSignal, this, [=] ( QGestureEvent* event, QTapAndHoldGesture* gesture ) {
+        QToolTip::showText ( gesture->position().toPoint(), plblCountryFlag->toolTip() );
+        event->accept();
+    } );
 }
 
 void CChannelFader::SetGUIDesign ( const EGUIDesign eNewDesign )
