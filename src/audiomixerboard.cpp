@@ -865,16 +865,42 @@ void CChannelFader::SetChannelInfos ( const CChannelInfo& cChanInfo )
 
     plblCountryFlag->setToolTip ( strToolTip );
     plblCountryFlag->setAccessibleDescription ( strLocationAccessible );
+
     plblInstrument->setToolTip ( strToolTip );
     plblInstrument->setAccessibleDescription ( strInstrumentAccessible );
+
     plblLabel->setToolTip ( strToolTip );
     plblLabel->setAccessibleName ( strAliasAccessible );
     plblLabel->setAccessibleDescription ( tr ( "Alias" ) );
+
+    QFrame* pFrame = dynamic_cast<QFrame*> ( plblLabel->parent() );
+
+    pFrame->setToolTip ( strToolTip );
+    pFrame->setAccessibleName ( strAliasAccessible + ", " + strInstrumentAccessible + ", " + strLocationAccessible );
+
+    CChannelFaderTapAndHoldGestureEventFilter* filter = new CChannelFaderTapAndHoldGestureEventFilter();
+    pFrame->installEventFilter ( filter );
+    pFrame->grabGesture ( Qt::TapAndHoldGesture, Qt::GestureFlag::DontStartGestureOnChildren | Qt::GestureFlag::IgnoredGesturesPropagateToParent );
+
     pcbMute->setAccessibleName ( "Mute " + strAliasAccessible + ", " + strInstrumentAccessible );
     pcbSolo->setAccessibleName ( "Solo " + strAliasAccessible + ", " + strInstrumentAccessible );
     pcbGroup->setAccessibleName ( "Group " + strAliasAccessible + ", " + strInstrumentAccessible );
-    dynamic_cast<QWidget*> ( plblLabel->parent() )
-        ->setAccessibleName ( strAliasAccessible + ", " + strInstrumentAccessible + ", " + strLocationAccessible );
+}
+
+bool CChannelFaderTapAndHoldGestureEventFilter::eventFilter ( QObject* obj, QEvent* event )
+{
+    if ( obj->isWidgetType() && event->type() == QEvent::Gesture && !event->isAccepted() )
+    {
+        QGesture* gesture = ( static_cast<QGestureEvent*> ( event ) )->gesture ( Qt::TapAndHoldGesture );
+
+        if ( gesture != nullptr && gesture->state() == Qt::GestureFinished )
+        {
+            QToolTip::showText ( gesture->hotSpot().toPoint(), ( static_cast<QFrame*> ( obj ) )->toolTip() );
+
+            return true;
+        }
+    }
+    return QObject::eventFilter ( obj, event );
 }
 
 /******************************************************************************\
