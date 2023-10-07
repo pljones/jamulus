@@ -39,6 +39,8 @@
 #include <QMenu>
 #include <QMutex>
 #include <QTextBoundaryFinder>
+#include <QGestureEvent>
+#include <QToolTip>
 #include "global.h"
 #include "util.h"
 #include "levelmeter.h"
@@ -153,6 +155,13 @@ signals:
 
     void panValueChanged ( float value );
     void soloStateChanged ( int value );
+};
+
+class CChannelFaderTapAndHoldGestureEventFilter : public QObject
+{
+    Q_OBJECT
+protected:
+    bool eventFilter ( QObject* obj, QEvent* event ) override;
 };
 
 template<unsigned int slotId>
