@@ -955,6 +955,8 @@ int main ( int argc, char** argv )
                 // GUI object
                 CClientDlg ClientDlg ( &Client,
                                        &Settings,
+                                       // Given the Client knows the following, why pass to CClientDlg?
+                                       // And why are there not Settings for them?
                                        strConnOnStartupAddress,
                                        strMIDISetup,
                                        bShowComplRegConnList,
