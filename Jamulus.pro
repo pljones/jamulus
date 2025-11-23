@@ -15,7 +15,7 @@ contains(CONFIG, "noupcasename") {
 # allow detailed version info for intermediate builds (#475)
 contains(VERSION, .*dev.*) {
     exists(".git/config") {
-        GIT_DESCRIPTION=$$system(git describe --match=xxxxxxxxxxxxxxxxxxxx --always --abbrev --dirty) # the match should never match
+        GIT_DESCRIPTION=$$system(git show -s --pretty=format:"%h:%ct") # commit:seconds-since-epoch
         VERSION = "$$VERSION"-$$GIT_DESCRIPTION
         message("building version \"$$VERSION\" (intermediate in git repository)")
     } else {
