@@ -119,12 +119,11 @@ jobs:
 
   update-announcement-on-autobuild:
     name: Update announcement for autobuild push
-    # Run on autobuild branch pushes in the main jamulussoftware repo.
+    # Run on autobuild branch pushes.
     # Skip when the pusher is the bot itself to prevent an infinite commit loop:
     # autobuild.yml already has ReleaseAnnouncement.md in paths-ignore, so the
     # bot commit will not re-trigger the build, but it would re-trigger this workflow.
     if: >-
-      github.repository_owner == 'jamulussoftware' &&
       startsWith(github.ref, 'refs/heads/autobuild') &&
       github.actor != 'github-actions[bot]'
     runs-on: ubuntu-latest
