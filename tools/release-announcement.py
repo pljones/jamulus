@@ -42,7 +42,7 @@ import time
 import urllib.request
 import urllib.error
 from datetime import datetime
-from typing import Dict, Any
+from typing import Dict, Any, NamedTuple
 import yaml
 
 # Try to import ollama, but don't fail if it's not available
@@ -343,9 +343,15 @@ def strip_markdown_fences(text: str) -> str:
     return text.strip()
 
 
+class BackendConfig(NamedTuple):
+    """LLM backend selection and model name."""
+    backend: str = "ollama"
+    model: str = "mistral-large-3:675b-cloud"
+
+
 def process_single_pr(pr_num: int, pr_title: str, announcement_file: str,
-                     prompt_file: str, backend: str = "ollama",
-                     model: str = "mistral-large-3:675b-cloud") -> bool:
+                     prompt_file: str,
+                     config: BackendConfig = BackendConfig()) -> bool:
     """
     Process a single PR and update the announcement file.
     Returns True if changes were made, False otherwise.
@@ -370,12 +376,12 @@ def process_single_pr(pr_num: int, pr_title: str, announcement_file: str,
     ai_prompt = build_ai_prompt(current_content, pr_data, prompt_template)
 
     # Call appropriate LLM backend
-    if backend == "ollama":
-        updated_ra = call_ollama_model(ai_prompt, model)
-    elif backend in ("github", "actions"):
+    if config.backend == "ollama":
+        updated_ra = call_ollama_model(ai_prompt, config.model)
+    elif config.backend in ("github", "actions"):
         updated_ra = call_github_models_api(ai_prompt)
     else:
-        print(f"Error: Unknown backend '{backend}'")
+        print(f"Error: Unknown backend '{config.backend}'")
         sys.exit(1)
 
     # Clean the output
@@ -398,6 +404,27 @@ def process_single_pr(pr_num: int, pr_title: str, announcement_file: str,
     return True
 
 
+def _setup_backend_token(backend: str) -> None:
+    """Resolve and pin the GitHub token for the chosen backend."""
+    if backend == "github":
+        token = resolve_github_token()
+        os.environ["GH_TOKEN"] = token
+        os.environ["GITHUB_TOKEN"] = token
+    elif backend == "actions":
+        raw = os.getenv("GITHUB_TOKEN") or os.getenv("GH_TOKEN")
+        if not raw:
+            print(
+                "Error: --backend actions requires GITHUB_TOKEN to be set.\n"
+                "Add this to your workflow step:\n"
+                "  env:\n"
+                "    GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}"
+            )
+            sys.exit(1)
+        token = normalize_github_token(raw)
+        os.environ["GH_TOKEN"] = token
+        os.environ["GITHUB_TOKEN"] = token
+
+
 def main():
     default_delay_secs = int(os.getenv("DELAY_SECS", "0"))
     default_model = os.getenv("OLLAMA_MODEL", "mistral-large-3:675b-cloud")
@@ -405,7 +432,9 @@ def main():
     parser = argparse.ArgumentParser(
         description="Progressive Release Announcement Generator"
     )
-    parser.add_argument("start", help="Starting boundary, or upper bound if end is omitted (e.g. pr3409 or v3.11.0)")
+    parser.add_argument("start",
+                       help="Starting boundary, or upper bound if end is omitted"
+                            " (e.g. pr3409 or v3.11.0)")
     parser.add_argument(
         "end",
         nargs="?",
@@ -429,25 +458,7 @@ def main():
         sys.exit(1)
 
     # Resolve and pin the token before any subprocess calls that need it.
-    if args.backend == "github":
-        # CLI usage: env vars → 'gh auth token' fallback.
-        token = resolve_github_token()
-        os.environ["GH_TOKEN"] = token
-        os.environ["GITHUB_TOKEN"] = token
-    elif args.backend == "actions":
-        # Workflow usage: token must come from the step's env block.
-        raw = os.getenv("GITHUB_TOKEN") or os.getenv("GH_TOKEN")
-        if not raw:
-            print(
-                "Error: --backend actions requires GITHUB_TOKEN to be set.\n"
-                "Add this to your workflow step:\n"
-                "  env:\n"
-                "    GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}"
-            )
-            sys.exit(1)
-        token = normalize_github_token(raw)
-        os.environ["GH_TOKEN"] = token
-        os.environ["GITHUB_TOKEN"] = token
+    _setup_backend_token(args.backend)
 
     # 1. Resolve Timeframes
     if args.end is None:
@@ -482,7 +493,7 @@ def main():
             time.sleep(args.delay_secs)
 
         if process_single_pr(pr_num, pr_title, args.file, args.prompt,
-                           args.backend, args.model):
+                      BackendConfig(args.backend, args.model)):
             # Commit changes
             subprocess.run(["git", "add", args.file], check=True)
             subprocess.run(
@@ -498,4 +509,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
