@@ -40,13 +40,25 @@ import re
 import subprocess
 import sys
 import time
-import urllib.error
-import urllib.request
 from datetime import datetime
 from typing import Any, NamedTuple
 
 import yaml  # pylint: disable=import-error  # type: ignore[import]
-import ollama  # pylint: disable=import-error  # type: ignore[import]
+from release_announcement_backends.github_backend import (
+    call_github_models_api as call_github_models_api_backend,
+)
+from release_announcement_backends.ollama_backend import call_ollama_model
+
+GITHUB_MODELS_DEFAULT_CHAT_MODEL = "openai/gpt-4o"
+GITHUB_MODELS_DEFAULT_EMBEDDING_MODEL = "openai/text-embedding-3-small"
+GITHUB_MODELS_CHAT_ENDPOINT = "https://models.github.ai/inference/chat/completions"
+GITHUB_MODELS_EMBEDDINGS_ENDPOINT = "https://models.github.ai/inference/embeddings"
+GITHUB_MODELS_CHAT_TOKEN_LIMIT = 7500
+"""Conservative token budget for a single GitHub Models chat-completions call."""
+
+_PR_MERGE_RE = re.compile(r"^Merge pull request #(\d+) from ")
+_CHANGELOG_SKIP_RE = re.compile(r"(?m)^CHANGELOG:\s*SKIP\s*$", re.IGNORECASE)
+_upstream_repo_cache: dict = {}
 
 
 def normalize_github_token(raw_token: str) -> str:
@@ -132,9 +144,6 @@ def get_universal_timestamp(identifier: str) -> str:
         sys.exit(1)
 
 
-_upstream_repo_cache: dict = {}
-
-
 def _get_upstream_repo() -> str | None:
     """
     Return the parent repository's 'owner/name' string for the current repo,
@@ -211,9 +220,6 @@ def parse_iso_datetime(value: str) -> datetime:
     return datetime.fromisoformat(value.replace("Z", "+00:00"))
 
 
-_PR_MERGE_RE = re.compile(r"^Merge pull request #(\d+) from ")
-
-
 def get_ordered_pr_list(start_iso: str, end_iso: str) -> list:
     """
     Find PRs merged in (start_iso, end_iso] from the local git log.
@@ -277,9 +283,6 @@ def sanitize_pr_data(raw_json: str) -> dict[str, Any]:
     }
 
 
-_CHANGELOG_SKIP_RE = re.compile(r"(?m)^CHANGELOG:\s*SKIP\s*$", re.IGNORECASE)
-
-
 def has_changelog_skip(pr_data: dict[str, Any]) -> bool:
     """Return True if the PR body or any comment contains a CHANGELOG: SKIP directive."""
     text_fields = [pr_data.get("body") or ""] + list(pr_data.get("comments", []))
@@ -294,8 +297,8 @@ def load_prompt_template(prompt_file: str) -> dict[str, Any]:
     except FileNotFoundError:
         print(f"Error: Prompt file '{prompt_file}' not found.")
         sys.exit(1)
-    except yaml.YAMLError as e:
-        print(f"Error: Failed to parse prompt file: {e}")
+    except yaml.YAMLError as err:
+        print(f"Error: Failed to parse prompt file: {err}")
         sys.exit(1)
 
 
@@ -315,80 +318,35 @@ def build_ai_prompt(
         + "\n====\n\nUpdate the Release Announcement to include any user-relevant "
         + "changes from this PR.\nReturn the complete updated Markdown document only."
     )
-
     return {
         "messages": [
             {"role": "system", "content": system_prompt},
             {"role": "user", "content": user_content},
         ],
-        "model": prompt_template.get("model", "openai/gpt-4o"),
+        "model": prompt_template.get("model", GITHUB_MODELS_DEFAULT_CHAT_MODEL),
         "modelParameters": prompt_template.get("modelParameters", {}),
     }
 
 
-def call_ollama_model(prompt: dict[str, Any], model_override: str | None = None) -> str:
-    """Call Ollama API for local model inference."""
-    model = model_override or os.getenv("OLLAMA_MODEL", "mistral-large-3:675b-cloud")
-    response = ollama.chat(
-        model=model, messages=prompt["messages"]
-    )
-    return response["message"]["content"].strip()
-
-
-def call_github_models_api(prompt: dict[str, Any], model_override: str | None = None) -> str:
-    """
-    Call GitHub Models API directly.
-    """
-    token = resolve_github_token()
-
-    endpoint = os.getenv("MODELS_ENDPOINT", "https://models.github.ai/inference/chat/completions")
-
-    model_parameters = prompt.get("modelParameters", {})
-    payload = {
-        "model": model_override or prompt.get("model", "openai/gpt-4o"),
-        "messages": prompt["messages"],
-    }
-
-    # Map prompt-template key to API key expected by GitHub Models endpoint.
-    if "maxCompletionTokens" in model_parameters:
-        payload["max_completion_tokens"] = model_parameters["maxCompletionTokens"]
-    if "temperature" in model_parameters:
-        payload["temperature"] = model_parameters["temperature"]
-
-    req = urllib.request.Request(
-        endpoint,
-        data=json.dumps(payload).encode("utf-8"),
-        headers={
-            "Authorization": f"Bearer {token}",
-            "Content-Type": "application/json",
+def call_github_models_api(
+    prompt: dict[str, Any],
+    chat_model_override: str | None = None,
+    embedding_model_override: str | None = None,
+) -> str:
+    """Call the extracted GitHub backend with common token/config resolution from main."""
+    return call_github_models_api_backend(
+        prompt=prompt,
+        resolve_token=resolve_github_token,
+        chat_model_override=chat_model_override,
+        embedding_model_override=embedding_model_override,
+        backend_config={
+            "default_chat_model": GITHUB_MODELS_DEFAULT_CHAT_MODEL,
+            "default_embedding_model": GITHUB_MODELS_DEFAULT_EMBEDDING_MODEL,
+            "chat_endpoint": GITHUB_MODELS_CHAT_ENDPOINT,
+            "embeddings_endpoint": GITHUB_MODELS_EMBEDDINGS_ENDPOINT,
+            "token_limit": GITHUB_MODELS_CHAT_TOKEN_LIMIT,
         },
-        method="POST",
     )
-
-    try:
-        with urllib.request.urlopen(req, timeout=60) as resp:
-            body = resp.read().decode("utf-8")
-    except urllib.error.HTTPError as err:
-        error_body = err.read().decode("utf-8", errors="replace")
-        print(f"Error: GitHub Models API returned HTTP {err.code}: {error_body}")
-        sys.exit(1)
-    except urllib.error.URLError as err:
-        print(f"Error: Failed to call GitHub Models API: {err}")
-        sys.exit(1)
-
-    try:
-        data = json.loads(body)
-        content = data.get("choices", [{}])[0].get("message", {}).get("content", "")
-    except (json.JSONDecodeError, IndexError, TypeError) as err:
-        print(f"Error: Invalid response from GitHub Models API: {err}")
-        sys.exit(1)
-
-    if not content:
-        print("Error: GitHub Models API returned an empty response.")
-        sys.exit(1)
-
-    return content.strip()
-
 
 def strip_markdown_fences(text: str) -> str:
     """
@@ -406,7 +364,8 @@ class BackendConfig(NamedTuple):
     """LLM backend selection and model name."""
 
     backend: str = "ollama"
-    model: str | None = None
+    chat_model: str | None = None
+    embedding_model: str | None = None
     dry_run: bool = False
 
 
@@ -493,16 +452,22 @@ def _build_ai_prompt(
 
 def _process_with_llm(ai_prompt: dict[str, Any], config: BackendConfig) -> str:
     """Process with appropriate LLM backend."""
-    backend_callers = {
-        "ollama": call_ollama_model,
-        "github": call_github_models_api,
-        "actions": call_github_models_api,
-    }
-    call_backend = backend_callers.get(config.backend)
-    if call_backend is None:
+    if config.backend == "ollama":
+        if config.embedding_model:
+            print(
+                "   > Note: --embedding-model/--embed is ignored for --backend ollama "
+                "(chat model only)."
+            )
+        updated_ra = call_ollama_model(ai_prompt, config.chat_model, config.embedding_model)
+    elif config.backend in {"github", "actions"}:
+        updated_ra = call_github_models_api(
+            ai_prompt,
+            chat_model_override=config.chat_model,
+            embedding_model_override=config.embedding_model,
+        )
+    else:
         print(f"Error: Unknown backend '{config.backend}'")
         sys.exit(1)
-    updated_ra = call_backend(ai_prompt, config.model)
     return strip_markdown_fences(updated_ra)
 
 
@@ -563,12 +528,24 @@ def _build_arg_parser() -> argparse.ArgumentParser:
         help="YAML prompt template file",
     )
     parser.add_argument(
+        "--chat-model",
         "--model",
+        dest="chat_model",
         default=None,
         help=(
-            "Model override for all backends. "
+            "Chat model override (alias: --model). "
             "If omitted with --backend ollama, falls back to OLLAMA_MODEL or "
             "mistral-large-3:675b-cloud."
+        ),
+    )
+    parser.add_argument(
+        "--embedding-model",
+        "--embed",
+        dest="embedding_model",
+        default=None,
+        help=(
+            "Embedding model override (alias: --embed). "
+            "Used by trimming in GitHub/actions backends."
         ),
     )
     parser.add_argument(
@@ -640,7 +617,7 @@ def main():
             pr_title,
             args.file,
             args.prompt,
-            BackendConfig(args.backend, args.model, args.dry_run),
+            BackendConfig(args.backend, args.chat_model, args.embedding_model, args.dry_run),
         )
 
         if result == "committed":
