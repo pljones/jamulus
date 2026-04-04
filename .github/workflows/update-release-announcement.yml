@@ -84,17 +84,17 @@ jobs:
             "$PR_NUMBER" "$PR_TITLE" "$PR_AUTHOR" "$PR_BODY" \
             > "${RUNNER_TEMP}/pr_info.txt"
 
-      - name: Install Python dependencies
+      - name: Install release announcement package
         if: steps.check-skip.outputs.skip == 'false'
         run: |
-          python3 -m pip install --user pyyaml ollama
+          python3 -m pip install --user ./tools/release_announcement
 
       - name: Update Release Announcement with GitHub Copilot
         if: steps.check-skip.outputs.skip == 'false'
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          python3 tools/release-announcement.py \
+          python3 -m release_announcement \
             "pr${{ github.event.pull_request.number }}" \
             --file ReleaseAnnouncement.md \
             --prompt .github/prompts/release-announcement.prompt.yml \
@@ -154,10 +154,10 @@ jobs:
             "$COMMIT_SHA" "$BRANCH_NAME" "$COMMIT_AUTHOR" "$COMMIT_MESSAGE" \
             > "${RUNNER_TEMP}/commit_info.txt"
 
-      - name: Install Python dependencies
+      - name: Install release announcement package
         if: steps.check-skip.outputs.skip == 'false'
         run: |
-          python3 -m pip install --user pyyaml ollama
+          python3 -m pip install --user ./tools/release_announcement
 
       - name: Update Release Announcement with GitHub Copilot
         if: steps.check-skip.outputs.skip == 'false'
@@ -174,7 +174,7 @@ jobs:
             > "${RUNNER_TEMP}/commit_info.txt"
 
           # Call the release announcement script
-          python3 tools/release-announcement.py \
+          python3 -m release_announcement \
             "${{ github.sha }}" \
             --file ReleaseAnnouncement.md \
             --prompt .github/prompts/release-announcement.prompt.yml \
