@@ -54,6 +54,15 @@ GITHUB_MODELS_DEFAULT_EMBEDDING_MODEL = "openai/text-embedding-3-small"
 GITHUB_MODELS_CHAT_ENDPOINT = "https://models.github.ai/inference/chat/completions"
 GITHUB_MODELS_EMBEDDINGS_ENDPOINT = "https://models.github.ai/inference/embeddings"
 GITHUB_MODELS_CHAT_TOKEN_LIMIT = 7500
+_ANNOUNCEMENT_TITLE_LINE = "# Jamulus Next Release — Working Announcement Draft"
+_ANNOUNCEMENT_INTRO_LINE = "Here's what's new in the next release of Jamulus:"
+_ANNOUNCEMENT_PLACEHOLDER_COMMENT = (
+    "<!-- Changes will appear here automatically as pull requests are merged -->"
+)
+_ANNOUNCEMENT_FOOTER_LINE = (
+    "*This draft is automatically maintained by the "
+    "[Update Release Announcement](.github/workflows/update-release-announcement.yml) workflow.*"
+)
 """Conservative token budget for a single GitHub Models chat-completions call."""
 
 _PR_MERGE_RE = re.compile(r"^Merge pull request #(\d+) from ")
@@ -531,10 +540,70 @@ def _process_with_llm(ai_prompt: dict[str, Any], config: BackendConfig) -> str:
     return strip_markdown_fences(updated_ra)
 
 
+def _normalize_placeholder_position(announcement: str) -> str:
+    """Keep the placeholder comment directly below the announcement intro line."""
+    if _ANNOUNCEMENT_INTRO_LINE not in announcement:
+        return announcement
+
+    if announcement.count(_ANNOUNCEMENT_PLACEHOLDER_COMMENT) == 1:
+        target_block = (
+            _ANNOUNCEMENT_INTRO_LINE
+            + "\n\n"
+            + _ANNOUNCEMENT_PLACEHOLDER_COMMENT
+            + "\n"
+        )
+        if target_block in announcement:
+            return announcement
+
+    announcement_without_placeholder = re.sub(
+        r"\n*"
+        + re.escape(_ANNOUNCEMENT_PLACEHOLDER_COMMENT)
+        + r"\n*",
+        "\n\n",
+        announcement,
+    )
+
+    normalized = announcement_without_placeholder.replace(
+        _ANNOUNCEMENT_INTRO_LINE,
+        _ANNOUNCEMENT_INTRO_LINE
+        + "\n\n"
+        + _ANNOUNCEMENT_PLACEHOLDER_COMMENT,
+        1,
+    )
+
+    normalized = re.sub(
+        re.escape(_ANNOUNCEMENT_INTRO_LINE)
+        + r"\n{3,}"
+        + re.escape(_ANNOUNCEMENT_PLACEHOLDER_COMMENT),
+        _ANNOUNCEMENT_INTRO_LINE + "\n\n" + _ANNOUNCEMENT_PLACEHOLDER_COMMENT,
+        normalized,
+        count=1,
+    )
+
+    return normalized
+
+
+def _extract_announcement_document(announcement: str) -> str:
+    """Trim any model-added preamble or trailing wrappers outside the Markdown document."""
+    document = announcement.strip()
+
+    title_index = document.find(_ANNOUNCEMENT_TITLE_LINE)
+    if title_index != -1:
+        document = document[title_index:]
+
+    footer_index = document.rfind(_ANNOUNCEMENT_FOOTER_LINE)
+    if footer_index != -1:
+        footer_end = footer_index + len(_ANNOUNCEMENT_FOOTER_LINE)
+        document = document[:footer_end]
+
+    return document
+
+
 def _write_and_check_announcement(updated_ra: str, announcement_file: str) -> None:
     """Write updated announcement and check for changes."""
+    normalized_ra = _normalize_placeholder_position(_extract_announcement_document(updated_ra))
     with open(announcement_file, "w", encoding="utf-8") as f:
-        f.write(updated_ra)
+        f.write(normalized_ra)
 
 
 def _check_for_changes(announcement_file: str) -> str:
