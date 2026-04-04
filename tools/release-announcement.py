@@ -59,6 +59,7 @@ GITHUB_MODELS_CHAT_TOKEN_LIMIT = 7500
 _PR_MERGE_RE = re.compile(r"^Merge pull request #(\d+) from ")
 _CHANGELOG_SKIP_RE = re.compile(r"(?m)^CHANGELOG:\s*SKIP\s*$", re.IGNORECASE)
 _upstream_repo_cache: dict = {}
+_current_repo_name_cache: dict = {}
 
 
 def normalize_github_token(raw_token: str) -> str:
@@ -167,6 +168,57 @@ def _get_upstream_repo() -> str | None:
         except (subprocess.CalledProcessError, json.JSONDecodeError, KeyError):
             _upstream_repo_cache["value"] = None
     return _upstream_repo_cache["value"]
+
+
+def _get_current_repo_name() -> str | None:
+    """
+    Return the current repo's 'owner/name' string (e.g. 'jamulussoftware/jamulus').
+    Used when the current repo has no parent (i.e. it is the canonical upstream).
+    Result is cached after the first call.
+    """
+    if "value" not in _current_repo_name_cache:
+        try:
+            result = subprocess.check_output(
+                ["gh", "repo", "view", "--json", "nameWithOwner", "--jq", ".nameWithOwner"],
+                text=True,
+                env=get_gh_auth_env(),
+            )
+            _current_repo_name_cache["value"] = result.strip() or None
+        except (subprocess.CalledProcessError, OSError):
+            _current_repo_name_cache["value"] = None
+    return _current_repo_name_cache["value"]
+
+
+def _fetch_inline_review_comments(pr_num: int, repo: str) -> list[str]:
+    """
+    Fetch inline code-review thread comments (pull request review comments) via
+    the GitHub REST API.  These are tied to specific lines of code and are NOT
+    returned by 'gh pr view --json reviews', which only carries the top-level
+    review submission body (usually empty for code-only reviews).
+    """
+    env = get_gh_auth_env()
+    bodies: list[str] = []
+    page = 1
+    while True:
+        try:
+            raw = subprocess.check_output(
+                [
+                    "gh", "api",
+                    f"/repos/{repo}/pulls/{pr_num}/comments?per_page=100&page={page}",
+                ],
+                text=True,
+                env=env,
+            )
+        except subprocess.CalledProcessError:
+            break
+        items = json.loads(raw)
+        if not items:
+            break
+        bodies.extend(item["body"] for item in items if item.get("body"))
+        if len(items) < 100:
+            break
+        page += 1
+    return bodies
 
 
 def resolve_identifier_to_git_target(identifier: str) -> str:
@@ -425,7 +477,15 @@ def _fetch_pr_data(pr_num: int, config: BackendConfig) -> dict[str, Any] | None:
             text=True,
             env=get_gh_auth_env(),
         )
-        return sanitize_pr_data(update_text)
+        pr_data = sanitize_pr_data(update_text)
+
+        # gh pr view omits inline code-review thread comments (tied to specific
+        # lines of code); fetch them separately via the REST API.
+        repo = upstream or _get_current_repo_name()
+        if repo:
+            pr_data["comments"].extend(_fetch_inline_review_comments(pr_num, repo))
+
+        return pr_data
     except subprocess.CalledProcessError:
         if config.dry_run:
             return None  # PR not accessible; skip metadata fetch in dry-run.
