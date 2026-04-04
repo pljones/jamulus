@@ -29,6 +29,7 @@ python3 -m venv /tmp/release-annoucement.venv
 # This is the python venv, no point running shellcheck on it
 # shellcheck disable=SC1091
 source /tmp/release-annoucement.venv/bin/activate
-pip install -q ollama pyyaml
 DELAY_SECS="${DELAY_SECS:-5}"
-python tools/release-announcement.py --delay-secs "$DELAY_SECS" "$@"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+python3 -m pip install -q "${SCRIPT_DIR}/release_announcement"
+python3 -m release_announcement --delay-secs "$DELAY_SECS" "$@"
