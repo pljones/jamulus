@@ -1,12 +1,12 @@
 name: Backfill Release Announcement
 run-name: Backfill from ${{ inputs.since_tag || 'r3_11_0' }}${{ inputs.dry_run == 'true' && ' (dry run)' || '' }}
 
-# This workflow runs tools/release-announcement.py to populate
+# This workflow runs the release_announcement Python package to populate
 # ReleaseAnnouncement.md with every merged PR since a given release tag.
 #
 # Trigger it once after a release tag is cut (e.g. r3_11_0) and this workflow
 # file is merged to main.  It processes PRs in chronological order, calling
-# the GitHub Models API (gpt-4o-mini) for each one so the announcement builds
+# the GitHub Models API (openai/gpt-4o) for each one so the announcement builds
 # up exactly as it would have done if the per-PR workflow had been running all
 # along.
 #
