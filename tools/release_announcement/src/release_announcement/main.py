@@ -40,6 +40,7 @@ import re
 import subprocess
 import sys
 import time
+from dataclasses import dataclass
 from datetime import datetime
 from typing import Any, NamedTuple
 
@@ -419,6 +420,87 @@ class BackendConfig(NamedTuple):
     chat_model: str | None = None
     embedding_model: str | None = None
     dry_run: bool = False
+    pipeline_mode: str = "legacy"
+
+
+@dataclass
+class DistilledContext:
+    """Structured staged-preprocessing output passed to prompt builders in later steps."""
+
+    summary: str
+    structured_signals: list[dict[str, Any]]
+    classification: dict[str, Any]
+    metadata: dict[str, Any]
+
+
+def _run_stage_with_logging(
+    stage_name: str,
+    stage_fn,
+    chunk_count: int,
+) -> Any:
+    """Run one staged-preprocessing phase and emit timing + chunk-count observability logs."""
+    start = time.perf_counter()
+    print(f"   [INFO] staged.{stage_name}.start chunks={chunk_count}")
+    result = stage_fn()
+    elapsed_ms = (time.perf_counter() - start) * 1000
+    print(f"   [INFO] staged.{stage_name}.end chunks={chunk_count} elapsed_ms={elapsed_ms:.2f}")
+    return result
+
+
+def _stub_chunk_pr_discussion(pr_data: dict[str, Any]) -> list[str]:
+    """Step 2 stub: collect discussion text in order without real chunking logic yet."""
+    ordered_text = [pr_data.get("body") or ""]
+    ordered_text.extend(pr_data.get("comments", []))
+    ordered_text.extend(pr_data.get("reviews", []))
+    return [text for text in ordered_text if isinstance(text, str) and text.strip()]
+
+
+def _stub_extract_chunk_signals(_chunks: list[str]) -> bool:
+    """Step 2 stub: extraction phase success marker."""
+    return True
+
+
+def _stub_consolidate_signals(_extraction_ok: bool) -> bool:
+    """Step 2 stub: consolidation phase success marker."""
+    return True
+
+
+def _stub_classify_signals(_consolidation_ok: bool) -> bool:
+    """Step 2 stub: classification phase success marker."""
+    return True
+
+
+def prepare_pr_context(
+    pr_data: dict[str, Any],
+    backend_config: BackendConfig,
+    pipeline_mode: str,
+) -> DistilledContext | None:
+    """Optional staged preprocessing insertion point for distillation.
+
+    Step 2 intentionally uses stubs and always returns None so callers verify the
+    fallback path while preserving legacy output behavior.
+    """
+    if pipeline_mode == "legacy":
+        return None
+
+    if pipeline_mode != "staged":
+        raise ValueError(f"Unsupported pipeline mode: {pipeline_mode}")
+
+    print(f"   [INFO] staged.preprocessing.start backend={backend_config.backend}")
+    chunks = _run_stage_with_logging("chunking", lambda: _stub_chunk_pr_discussion(pr_data), 0)
+    _run_stage_with_logging("extraction", lambda: _stub_extract_chunk_signals(chunks), len(chunks))
+    _run_stage_with_logging(
+        "consolidation",
+        lambda: _stub_consolidate_signals(True),
+        len(chunks),
+    )
+    _run_stage_with_logging(
+        "classification",
+        lambda: _stub_classify_signals(True),
+        len(chunks),
+    )
+    print("   [INFO] staged.preprocessing.end context=none")
+    return None
 
 
 def process_single_pr(
@@ -449,6 +531,17 @@ def process_single_pr(
 
     if config.dry_run:
         return "dry_run"
+
+    distilled_context: DistilledContext | None = None
+    if config.pipeline_mode == "staged":
+        try:
+            distilled_context = prepare_pr_context(pr_data, config, config.pipeline_mode)
+        except Exception as err:  # pylint: disable=broad-except
+            print(f"   [WARNING] staged preprocessing failed ({err}); falling back to legacy mode")
+            distilled_context = None
+
+        if distilled_context is None:
+            print("   [WARNING] staged preprocessing returned no context, falling back to legacy mode")
 
     # Load and process announcement
     current_content = _load_announcement_content(announcement_file)
@@ -625,6 +718,12 @@ def _build_arg_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Show which PRs would be processed/skipped without calling the LLM",
     )
+    parser.add_argument(
+        "--pipeline",
+        default="legacy",
+        choices=["legacy", "staged"],
+        help="Preprocessing pipeline mode: legacy (default) or staged (Step 2 stubs).",
+    )
     return parser
 
 
@@ -677,7 +776,13 @@ def main():
             pr_title,
             args.file,
             args.prompt,
-            BackendConfig(args.backend, args.chat_model, args.embedding_model, args.dry_run),
+            BackendConfig(
+                args.backend,
+                args.chat_model,
+                args.embedding_model,
+                args.dry_run,
+                args.pipeline,
+            ),
         )
 
         if result == "committed":
