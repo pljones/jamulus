@@ -42,13 +42,28 @@ import sys
 import time
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Any, NamedTuple
+from typing import Any, cast
 
 import yaml  # pylint: disable=import-error  # type: ignore[import]
 from .backends.github_backend import (
     call_github_models_api as call_github_models_api_backend,
+    probe_capabilities as probe_github_backend_capabilities,
 )
-from .backends.ollama_backend import call_ollama_model
+from .backends.ollama_backend import (
+    call_ollama_model,
+    probe_capabilities as probe_ollama_backend_capabilities,
+)
+from .capability_probing import (
+    probe_capabilities as probe_capabilities_impl,
+    validate_mode as validate_mode_impl,
+)
+from .cli_config import (
+    BackendCapabilities,
+    BackendConfig,
+    build_arg_parser as build_arg_parser_impl,
+    resolve_backend_config as resolve_backend_config_impl,
+    validate_cli_args as validate_cli_args_impl,
+)
 
 GITHUB_MODELS_DEFAULT_CHAT_MODEL = "openai/gpt-4o"
 GITHUB_MODELS_DEFAULT_EMBEDDING_MODEL = "openai/text-embedding-3-small"
@@ -413,16 +428,6 @@ def strip_markdown_fences(text: str) -> str:
     return text.strip()
 
 
-class BackendConfig(NamedTuple):
-    """LLM backend selection and model name."""
-
-    backend: str = "ollama"
-    chat_model: str | None = None
-    embedding_model: str | None = None
-    dry_run: bool = False
-    pipeline_mode: str = "legacy"
-
-
 @dataclass
 class DistilledContext:
     """Structured staged-preprocessing output passed to prompt builders in later steps."""
@@ -431,6 +436,32 @@ class DistilledContext:
     structured_signals: list[dict[str, Any]]
     classification: dict[str, Any]
     metadata: dict[str, Any]
+
+
+def _resolve_backend_config(args: argparse.Namespace) -> BackendConfig:
+    return resolve_backend_config_impl(args)
+
+
+def validate_cli_args(parser: argparse.ArgumentParser, args: argparse.Namespace) -> None:
+    """Validate cross-argument invariants before startup probing or processing."""
+    validate_cli_args_impl(parser, args)
+
+
+def probe_capabilities(config: BackendConfig) -> BackendCapabilities:
+    """Probe backend capabilities for the resolved model/backends."""
+    return probe_capabilities_impl(
+        config=config,
+        resolve_github_token=resolve_github_token,
+        probe_github_backend_capabilities=probe_github_backend_capabilities,
+        probe_ollama_backend_capabilities=probe_ollama_backend_capabilities,
+        github_chat_endpoint=GITHUB_MODELS_CHAT_ENDPOINT,
+        github_embeddings_endpoint=GITHUB_MODELS_EMBEDDINGS_ENDPOINT,
+    )
+
+
+def validate_mode(config: BackendConfig) -> None:
+    """Validate and reconcile pipeline/staged mode against probed capabilities."""
+    validate_mode_impl(config)
 
 
 def _run_stage_with_logging(
@@ -508,7 +539,7 @@ def process_single_pr(
     pr_title: str,
     announcement_file: str,
     prompt_file: str,
-    config: BackendConfig = BackendConfig(),
+    config: BackendConfig | None = None,
 ) -> str:
     """
     Process a single PR and optionally update the announcement file.
@@ -519,6 +550,8 @@ def process_single_pr(
       "dry_run"    – dry-run mode; PR would have been processed (no LLM called).
     """
     print(f"--- Processing PR #{pr_num}: {pr_title} ---")
+    if config is None:
+        config = BackendConfig()
 
     # Get PR data
     pr_data = _fetch_pr_data(pr_num, config)
@@ -535,13 +568,19 @@ def process_single_pr(
     distilled_context: DistilledContext | None = None
     if config.pipeline_mode == "staged":
         try:
-            distilled_context = prepare_pr_context(pr_data, config, config.pipeline_mode)
+            distilled_context = cast(
+                DistilledContext | None,
+                prepare_pr_context(pr_data, config, config.pipeline_mode),
+            )
         except Exception as err:  # pylint: disable=broad-except
             print(f"   [WARNING] staged preprocessing failed ({err}); falling back to legacy mode")
             distilled_context = None
 
         if distilled_context is None:
-            print("   [WARNING] staged preprocessing returned no context, falling back to legacy mode")
+            print(
+                "   [WARNING] staged preprocessing returned no context, "
+                "falling back to legacy mode"
+            )
 
     # Load and process announcement
     current_content = _load_announcement_content(announcement_file)
@@ -605,21 +644,22 @@ def _build_ai_prompt(
 
 def _process_with_llm(ai_prompt: dict[str, Any], config: BackendConfig) -> str:
     """Process with appropriate LLM backend."""
-    if config.backend == "ollama":
+    target_backend = config.chat_model_backend or config.backend
+    if target_backend == "ollama":
         if config.embedding_model:
             print(
                 "   > Note: --embedding-model/--embed is ignored for --backend ollama "
                 "(chat model only)."
             )
         updated_ra = call_ollama_model(ai_prompt, config.chat_model, config.embedding_model)
-    elif config.backend in {"github", "actions"}:
+    elif target_backend in {"github", "actions"}:
         updated_ra = call_github_models_api(
             ai_prompt,
             chat_model_override=config.chat_model,
             embedding_model_override=config.embedding_model,
         )
     else:
-        print(f"Error: Unknown backend '{config.backend}'")
+        print(f"Error: Unknown backend '{target_backend}'")
         sys.exit(1)
     return strip_markdown_fences(updated_ra)
 
@@ -663,71 +703,10 @@ def _setup_backend_token(backend: str) -> None:
 
 def _build_arg_parser() -> argparse.ArgumentParser:
     """Build and return the command-line argument parser."""
-    parser = argparse.ArgumentParser(description="Progressive Release Announcement Generator")
-    parser.add_argument(
-        "start",
-        help="Starting boundary, or upper bound if end is omitted"
-        " (e.g. pr3409 or v3.11.0)",
-    )
-    parser.add_argument(
-        "end",
-        nargs="?",
-        help="Ending boundary (e.g. pr3500 or HEAD). Defaults to start if omitted.",
-    )
-    parser.add_argument("--file", required=True, help="Markdown file to update")
-    parser.add_argument(
-        "--prompt",
-        default=".github/prompts/release-announcement.prompt.yml",
-        help="YAML prompt template file",
-    )
-    parser.add_argument(
-        "--chat-model",
-        "--model",
-        dest="chat_model",
-        default=None,
-        help=(
-            "Chat model override (alias: --model). "
-            "If omitted with --backend ollama, falls back to OLLAMA_MODEL or "
-            "mistral-large-3:675b-cloud."
-        ),
-    )
-    parser.add_argument(
-        "--embedding-model",
-        "--embed",
-        dest="embedding_model",
-        default=None,
-        help=(
-            "Embedding model override (alias: --embed). "
-            "Used by trimming in GitHub/actions backends."
-        ),
-    )
-    parser.add_argument(
-        "--backend",
-        default="ollama",
-        choices=["ollama", "github", "actions"],
-        help="LLM backend to use (actions: for GitHub Actions workflows)",
-    )
-    parser.add_argument(
-        "--delay-secs",
-        type=int,
-        default=int(os.getenv("DELAY_SECS", "0")),
-        help="Seconds to sleep before each PR is processed",
-    )
-    parser.add_argument(
-        "--dry-run",
-        action="store_true",
-        help="Show which PRs would be processed/skipped without calling the LLM",
-    )
-    parser.add_argument(
-        "--pipeline",
-        default="legacy",
-        choices=["legacy", "staged"],
-        help="Preprocessing pipeline mode: legacy (default) or staged (Step 2 stubs).",
-    )
-    return parser
+    return build_arg_parser_impl()
 
 
-def main():
+def main():  # pylint: disable=too-many-branches,too-many-locals,too-many-statements
     parser = _build_arg_parser()
     args = parser.parse_args()
 
@@ -735,8 +714,18 @@ def main():
         print("Error: --delay-secs must be >= 0")
         sys.exit(1)
 
+    validate_cli_args(parser, args)
+
     # Resolve and pin the token before any subprocess calls that need it.
     _setup_backend_token(args.backend)
+
+    config = _resolve_backend_config(args)
+    try:
+        probe_capabilities(config)
+        validate_mode(config)
+    except RuntimeError as err:
+        print(f"Error: {err}")
+        sys.exit(1)
 
     # 1. Resolve Timeframes
     if args.end is None:
@@ -776,13 +765,7 @@ def main():
             pr_title,
             args.file,
             args.prompt,
-            BackendConfig(
-                args.backend,
-                args.chat_model,
-                args.embedding_model,
-                args.dry_run,
-                args.pipeline,
-            ),
+            config,
         )
 
         if result == "committed":

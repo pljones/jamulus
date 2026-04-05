@@ -437,7 +437,7 @@ def _summarize_pr_chunks(
     return {**prompt, "messages": new_messages}
 
 
-def call_github_models_api(
+def call_github_models_api(  # pylint: disable=too-many-arguments,too-many-positional-arguments,too-many-locals
     prompt: dict[str, Any],
     resolve_token: Callable[[], str],
     chat_model_override: str | None = None,
@@ -490,3 +490,96 @@ def call_github_models_api(
     if "temperature" in model_parameters:
         payload["temperature"] = model_parameters["temperature"]
     return _execute_github_chat_completion(endpoint, payload, token, chat_model)
+
+
+def _probe_request(
+    endpoint: str,
+    payload: dict[str, Any],
+    token: str,
+) -> dict[str, Any]:
+    """Execute a probe request and return decoded JSON, raising rich RuntimeError on failures."""
+    req = urllib.request.Request(
+        endpoint,
+        data=json.dumps(payload).encode("utf-8"),
+        headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"},
+        method="POST",
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=30) as resp:
+            raw = resp.read().decode("utf-8")
+            return json.loads(raw)
+    except urllib.error.HTTPError as err:
+        body = err.read().decode("utf-8", errors="replace")
+        headers = dict(err.headers.items()) if err.headers else {}
+        raise RuntimeError(
+            "GitHub Models capability probe HTTP failure. "
+            f"request_payload={json.dumps(payload, ensure_ascii=True)} "
+            f"response_status={err.code} "
+            f"response_headers={json.dumps(headers, ensure_ascii=True)} "
+            f"response_body={body}"
+        ) from err
+    except urllib.error.URLError as err:
+        raise RuntimeError(
+            "GitHub Models capability probe network failure. "
+            f"request_payload={json.dumps(payload, ensure_ascii=True)} "
+            f"error={err}"
+        ) from err
+    except json.JSONDecodeError as err:
+        raise RuntimeError(
+            "GitHub Models capability probe returned non-JSON response. "
+            f"request_payload={json.dumps(payload, ensure_ascii=True)} "
+            f"error={err}"
+        ) from err
+
+
+def probe_capabilities(  # pylint: disable=too-many-arguments,too-many-positional-arguments,too-many-locals
+    token: str,
+    chat_model: str,
+    embedding_model: str | None,
+    chat_endpoint: str,
+    embeddings_endpoint: str,
+    probe_embeddings: bool,
+) -> dict[str, bool]:
+    """Probe GitHub Models chat/embedding support for selected models."""
+    chat_payload = {
+        "model": chat_model,
+        "messages": [{"role": "user", "content": "Reply with 'ok'."}],
+        "max_completion_tokens": 8,
+    }
+    chat_response = _probe_request(chat_endpoint, chat_payload, token)
+    content = (
+        chat_response.get("choices", [{}])[0]
+        .get("message", {})
+        .get("content", "")
+    )
+    if not isinstance(content, str) or not content.strip():
+        raise RuntimeError(
+            "GitHub Models chat capability probe returned empty content. "
+            f"request_payload={json.dumps(chat_payload, ensure_ascii=True)} "
+            f"response_body={json.dumps(chat_response, ensure_ascii=True)}"
+        )
+
+    supports_embeddings = False
+    if probe_embeddings:
+        model = embedding_model or DEFAULT_BACKEND_CONFIG["default_embedding_model"]
+        embed_payload = {"model": model, "input": ["test"]}
+        try:
+            embed_response = _probe_request(embeddings_endpoint, embed_payload, token)
+            data = embed_response.get("data") or []
+            vector = data[0].get("embedding") if data and isinstance(data[0], dict) else None
+            supports_embeddings = isinstance(vector, list) and bool(vector)
+            if not supports_embeddings:
+                raise RuntimeError(
+                    "GitHub Models embeddings probe returned no embedding vector. "
+                    f"request_payload={json.dumps(embed_payload, ensure_ascii=True)} "
+                    f"response_body={json.dumps(embed_response, ensure_ascii=True)}"
+                )
+        except RuntimeError as err:
+            print(
+                "Warning: GitHub embeddings capability probe failed; "
+                "continuing with chat-only staged mode. "
+                f"{err}"
+            )
+            supports_embeddings = False
+
+    return {"supports_chat": True, "supports_embeddings": supports_embeddings}
