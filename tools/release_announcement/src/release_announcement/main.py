@@ -39,38 +39,25 @@ import os
 import re
 import subprocess
 import sys
-import time
-from dataclasses import dataclass
 from datetime import datetime
 from typing import Any, cast
 
 import yaml  # pylint: disable=import-error  # type: ignore[import]
-from .backends.github_backend import (
-    call_github_models_api as call_github_models_api_backend,
-    probe_capabilities as probe_github_backend_capabilities,
-)
-from .backends.ollama_backend import (
-    call_ollama_model,
-    probe_capabilities as probe_ollama_backend_capabilities,
-)
+from .backends.base import BACKEND_REGISTRY, BackendCapabilities
 from .capability_probing import (
     probe_capabilities as probe_capabilities_impl,
     validate_mode as validate_mode_impl,
 )
 from .cli_config import (
-    BackendCapabilities,
     BackendConfig,
     build_arg_parser as build_arg_parser_impl,
     resolve_backend_config as resolve_backend_config_impl,
     validate_cli_args as validate_cli_args_impl,
 )
-
-GITHUB_MODELS_DEFAULT_CHAT_MODEL = "openai/gpt-4o"
-GITHUB_MODELS_DEFAULT_EMBEDDING_MODEL = "openai/text-embedding-3-small"
-GITHUB_MODELS_CHAT_ENDPOINT = "https://models.github.ai/inference/chat/completions"
-GITHUB_MODELS_EMBEDDINGS_ENDPOINT = "https://models.github.ai/inference/embeddings"
-GITHUB_MODELS_CHAT_TOKEN_LIMIT = 7500
-"""Conservative token budget for a single GitHub Models chat-completions call."""
+from .distillation import (
+    DistilledContext,
+    run_distillation_pipeline,
+)
 
 _PR_MERGE_RE = re.compile(r"^Merge pull request #(\d+) from ")
 _CHANGELOG_SKIP_RE = re.compile(r"(?m)^CHANGELOG:\s*SKIP\s*$", re.IGNORECASE)
@@ -98,36 +85,6 @@ def normalize_github_token(raw_token: str) -> str:
         sys.exit(1)
 
     return token
-
-
-def resolve_github_token() -> str:
-    """Resolve GitHub token from env first, then gh auth token as fallback."""
-    raw_token = os.getenv("GH_TOKEN") or os.getenv("GITHUB_TOKEN")
-    if raw_token:
-        return normalize_github_token(raw_token)
-
-    try:
-        gh_token = subprocess.check_output(
-            ["gh", "auth", "token"], text=True, stderr=subprocess.STDOUT
-        )
-    except FileNotFoundError:
-        print(
-            "Error: GH_TOKEN/GITHUB_TOKEN is not set and GitHub CLI ('gh') is not installed. "
-            "Install gh or set GH_TOKEN/GITHUB_TOKEN."
-        )
-        sys.exit(1)
-    except subprocess.CalledProcessError as err:
-        details = (err.output or "").strip()
-        if details:
-            print(
-                "Error: GH_TOKEN/GITHUB_TOKEN is not set and failed to run 'gh auth token'.\n"
-                f"gh output: {details}"
-            )
-        else:
-            print("Error: GH_TOKEN/GITHUB_TOKEN is not set and failed to run 'gh auth token'.")
-        sys.exit(1)
-
-    return normalize_github_token(gh_token)
 
 
 def get_gh_auth_env() -> dict[str, str]:
@@ -391,30 +348,10 @@ def build_ai_prompt(
             {"role": "system", "content": system_prompt},
             {"role": "user", "content": user_content},
         ],
-        "model": prompt_template.get("model", GITHUB_MODELS_DEFAULT_CHAT_MODEL),
+        "model": prompt_template.get("model"),
         "modelParameters": prompt_template.get("modelParameters", {}),
     }
 
-
-def call_github_models_api(
-    prompt: dict[str, Any],
-    chat_model_override: str | None = None,
-    embedding_model_override: str | None = None,
-) -> str:
-    """Call the extracted GitHub backend with common token/config resolution from main."""
-    return call_github_models_api_backend(
-        prompt=prompt,
-        resolve_token=resolve_github_token,
-        chat_model_override=chat_model_override,
-        embedding_model_override=embedding_model_override,
-        backend_config={
-            "default_chat_model": GITHUB_MODELS_DEFAULT_CHAT_MODEL,
-            "default_embedding_model": GITHUB_MODELS_DEFAULT_EMBEDDING_MODEL,
-            "chat_endpoint": GITHUB_MODELS_CHAT_ENDPOINT,
-            "embeddings_endpoint": GITHUB_MODELS_EMBEDDINGS_ENDPOINT,
-            "token_limit": GITHUB_MODELS_CHAT_TOKEN_LIMIT,
-        },
-    )
 
 def strip_markdown_fences(text: str) -> str:
     """
@@ -428,14 +365,9 @@ def strip_markdown_fences(text: str) -> str:
     return text.strip()
 
 
-@dataclass
-class DistilledContext:
-    """Structured staged-preprocessing output passed to prompt builders in later steps."""
-
-    summary: str
-    structured_signals: list[dict[str, Any]]
-    classification: dict[str, Any]
-    metadata: dict[str, Any]
+# DistilledContext is defined in distillation.py and re-exported here for
+# backward compatibility with callers that import it from this module.
+__all__ = ["DistilledContext"]
 
 
 def _resolve_backend_config(args: argparse.Namespace) -> BackendConfig:
@@ -449,14 +381,7 @@ def validate_cli_args(parser: argparse.ArgumentParser, args: argparse.Namespace)
 
 def probe_capabilities(config: BackendConfig) -> BackendCapabilities:
     """Probe backend capabilities for the resolved model/backends."""
-    return probe_capabilities_impl(
-        config=config,
-        resolve_github_token=resolve_github_token,
-        probe_github_backend_capabilities=probe_github_backend_capabilities,
-        probe_ollama_backend_capabilities=probe_ollama_backend_capabilities,
-        github_chat_endpoint=GITHUB_MODELS_CHAT_ENDPOINT,
-        github_embeddings_endpoint=GITHUB_MODELS_EMBEDDINGS_ENDPOINT,
-    )
+    return probe_capabilities_impl(config=config)
 
 
 def validate_mode(config: BackendConfig) -> None:
@@ -464,52 +389,21 @@ def validate_mode(config: BackendConfig) -> None:
     validate_mode_impl(config)
 
 
-def _run_stage_with_logging(
-    stage_name: str,
-    stage_fn,
-    chunk_count: int,
-) -> Any:
-    """Run one staged-preprocessing phase and emit timing + chunk-count observability logs."""
-    start = time.perf_counter()
-    print(f"   [INFO] staged.{stage_name}.start chunks={chunk_count}")
-    result = stage_fn()
-    elapsed_ms = (time.perf_counter() - start) * 1000
-    print(f"   [INFO] staged.{stage_name}.end chunks={chunk_count} elapsed_ms={elapsed_ms:.2f}")
-    return result
-
-
-def _stub_chunk_pr_discussion(pr_data: dict[str, Any]) -> list[str]:
-    """Step 2 stub: collect discussion text in order without real chunking logic yet."""
-    ordered_text = [pr_data.get("body") or ""]
-    ordered_text.extend(pr_data.get("comments", []))
-    ordered_text.extend(pr_data.get("reviews", []))
-    return [text for text in ordered_text if isinstance(text, str) and text.strip()]
-
-
-def _stub_extract_chunk_signals(_chunks: list[str]) -> bool:
-    """Step 2 stub: extraction phase success marker."""
-    return True
-
-
-def _stub_consolidate_signals(_extraction_ok: bool) -> bool:
-    """Step 2 stub: consolidation phase success marker."""
-    return True
-
-
-def _stub_classify_signals(_consolidation_ok: bool) -> bool:
-    """Step 2 stub: classification phase success marker."""
-    return True
-
-
 def prepare_pr_context(
     pr_data: dict[str, Any],
     backend_config: BackendConfig,
     pipeline_mode: str,
+    stage_prompt_paths: dict[str, str] | None = None,
 ) -> DistilledContext | None:
     """Optional staged preprocessing insertion point for distillation.
 
-    Step 2 intentionally uses stubs and always returns None so callers verify the
-    fallback path while preserving legacy output behavior.
+    In legacy mode returns ``None`` immediately.  In staged mode, resolves the
+    appropriate ``DistillationAdapter`` based on ``backend_config.backend``,
+    then delegates to ``run_distillation_pipeline`` and returns the result.
+
+    When the backend does not yet have a staged adapter implemented this
+    function returns ``None`` so the caller can fall back to legacy mode
+    without treating it as an error.
     """
     if pipeline_mode == "legacy":
         return None
@@ -518,20 +412,39 @@ def prepare_pr_context(
         raise ValueError(f"Unsupported pipeline mode: {pipeline_mode}")
 
     print(f"   [INFO] staged.preprocessing.start backend={backend_config.backend}")
-    chunks = _run_stage_with_logging("chunking", lambda: _stub_chunk_pr_discussion(pr_data), 0)
-    _run_stage_with_logging("extraction", lambda: _stub_extract_chunk_signals(chunks), len(chunks))
-    _run_stage_with_logging(
-        "consolidation",
-        lambda: _stub_consolidate_signals(True),
-        len(chunks),
-    )
-    _run_stage_with_logging(
-        "classification",
-        lambda: _stub_classify_signals(True),
-        len(chunks),
-    )
-    print("   [INFO] staged.preprocessing.end context=none")
-    return None
+
+    if backend_config.backend == "dummy":
+        try:
+            from tests.dummy_backend import DummyDistillationAdapter  # type: ignore[import]
+        except ImportError as err:
+            print(
+                "Error: --backend dummy requires the tests/ package to be importable. "
+                "Run from the project root with tests/ on sys.path (e.g. python -m pytest)."
+            )
+            raise RuntimeError(
+                "--backend dummy: tests.dummy_backend not importable"
+            ) from err
+        adapter = DummyDistillationAdapter()
+    else:
+        print(
+            f"   [INFO] staged.preprocessing.unavailable backend={backend_config.backend}; "
+            "falling back to legacy mode"
+        )
+        return None
+
+    use_embeddings = backend_config.capabilities.supports_embeddings
+    try:
+        context = run_distillation_pipeline(
+            pr_data,
+            adapter,
+            use_embeddings=use_embeddings,
+            stage_prompt_paths=stage_prompt_paths,
+        )
+        print("   [INFO] staged.preprocessing.end context=ok")
+        return context
+    except Exception as err:
+        print(f"   [ERROR] staged.preprocessing.failed: {err}")
+        raise
 
 
 def process_single_pr(
@@ -582,6 +495,12 @@ def process_single_pr(
                 "falling back to legacy mode"
             )
 
+    # For the dummy backend, staged pipeline is the goal; skip the final LLM
+    # edit step so the announcement file remains unchanged and deterministic.
+    if config.backend == "dummy":
+        print("   [DUMMY] Staged pipeline complete; final LLM edit step skipped.")
+        return "no_changes"
+
     # Load and process announcement
     current_content = _load_announcement_content(announcement_file)
     prompt_template = _load_prompt_template(prompt_file)
@@ -589,6 +508,8 @@ def process_single_pr(
 
     # Process with LLM backend
     updated_ra = _process_with_llm(ai_prompt, config)
+    if updated_ra is None:
+        return "no_changes"
 
     # Write and check changes
     _write_and_check_announcement(updated_ra, announcement_file)
@@ -642,26 +563,18 @@ def _build_ai_prompt(
     return build_ai_prompt(current_content, pr_data, prompt_template)
 
 
-def _process_with_llm(ai_prompt: dict[str, Any], config: BackendConfig) -> str:
-    """Process with appropriate LLM backend."""
+def _process_with_llm(ai_prompt: dict[str, Any], config: BackendConfig) -> str | None:
+    """Process with appropriate LLM backend; returns None when the backend produces no output."""
     target_backend = config.chat_model_backend or config.backend
-    if target_backend == "ollama":
-        if config.embedding_model:
-            print(
-                "   > Note: --embedding-model/--embed is ignored for --backend ollama "
-                "(chat model only)."
-            )
-        updated_ra = call_ollama_model(ai_prompt, config.chat_model, config.embedding_model)
-    elif target_backend in {"github", "actions"}:
-        updated_ra = call_github_models_api(
-            ai_prompt,
-            chat_model_override=config.chat_model,
-            embedding_model_override=config.embedding_model,
-        )
-    else:
+    cls = BACKEND_REGISTRY.get(target_backend)
+    if cls is None:
         print(f"Error: Unknown backend '{target_backend}'")
         sys.exit(1)
-    return strip_markdown_fences(updated_ra)
+    backend = cls(chat_model=config.chat_model, embedding_model=config.embedding_model)  # type: ignore[call-arg]
+    result = backend.call_chat(ai_prompt)
+    if result is None:
+        return None
+    return strip_markdown_fences(result)
 
 
 def _write_and_check_announcement(updated_ra: str, announcement_file: str) -> None:
@@ -680,27 +593,6 @@ def _check_for_changes(announcement_file: str) -> str:
     return "no_changes" if diff_check.returncode == 0 else "committed"
 
 
-def _setup_backend_token(backend: str) -> None:
-    """Resolve and pin the GitHub token for the chosen backend."""
-    if backend == "github":
-        token = resolve_github_token()
-        os.environ["GH_TOKEN"] = token
-        os.environ["GITHUB_TOKEN"] = token
-    elif backend == "actions":
-        raw = os.getenv("GITHUB_TOKEN") or os.getenv("GH_TOKEN")
-        if not raw:
-            print(
-                "Error: --backend actions requires GITHUB_TOKEN to be set.\n"
-                "Add this to your workflow step:\n"
-                "  env:\n"
-                "    GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}"
-            )
-            sys.exit(1)
-        token = normalize_github_token(raw)
-        os.environ["GH_TOKEN"] = token
-        os.environ["GITHUB_TOKEN"] = token
-
-
 def _build_arg_parser() -> argparse.ArgumentParser:
     """Build and return the command-line argument parser."""
     return build_arg_parser_impl()
@@ -715,9 +607,6 @@ def main():  # pylint: disable=too-many-branches,too-many-locals,too-many-statem
         sys.exit(1)
 
     validate_cli_args(parser, args)
-
-    # Resolve and pin the token before any subprocess calls that need it.
-    _setup_backend_token(args.backend)
 
     config = _resolve_backend_config(args)
     try:

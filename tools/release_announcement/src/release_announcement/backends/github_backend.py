@@ -1,12 +1,15 @@
 """GitHub Models backend for release-announcement generation."""
 
 import json
+import math
 import os
+import subprocess
 import sys
 import urllib.error
 import urllib.request
 from typing import Any, Callable
-import math
+
+from .base import Backend, register_backend
 
 _embedding_support_cache: dict[str, bool] = {}
 """Per-process cache so we only ping the embeddings endpoint once per model."""
@@ -356,9 +359,11 @@ def _trim_prompt_via_embeddings(
     prompt: dict[str, Any],
     model: str,
     token: str,
-    backend_config: dict[str, Any],
+    chat_endpoint: str,
+    embeddings_endpoint: str,
+    token_limit: int,
 ) -> dict[str, Any]:
-    context = _prepare_embedding_trim_context(prompt, backend_config["token_limit"])
+    context = _prepare_embedding_trim_context(prompt, token_limit)
     if context is None:
         return prompt
 
@@ -370,12 +375,12 @@ def _trim_prompt_via_embeddings(
                 "model": model,
                 "token": token,
                 "budget": context["budget"],
-                "embeddings_endpoint": backend_config["embeddings_endpoint"],
+                "embeddings_endpoint": embeddings_endpoint,
             }
         )
     except RuntimeError as err:
         print(f"  [budget] Embedding call failed ({err}) — falling back to summarisation")
-        return _summarize_pr_chunks(prompt, model, token, backend_config)
+        return _summarize_pr_chunks(prompt, model, token, chat_endpoint, token_limit)
 
     trimmed = _build_trimmed_pr_payload(
         context["pr_header"],
@@ -399,7 +404,8 @@ def _summarize_pr_chunks(
     prompt: dict[str, Any],
     model: str,
     token: str,
-    backend_config: dict[str, Any],
+    chat_endpoint: str,
+    token_limit: int,
 ) -> dict[str, Any]:
     """Trim an over-budget prompt by summarising the PR discussion in chunks."""
     messages = prompt["messages"]
@@ -412,7 +418,7 @@ def _summarize_pr_chunks(
         return prompt
 
     preamble, pr_block, suffix = parts
-    effective_chat_endpoint = os.getenv("MODELS_ENDPOINT", backend_config["chat_endpoint"])
+    effective_chat_endpoint = os.getenv("MODELS_ENDPOINT", chat_endpoint)
     chunk_chars = 3000 * 4
 
     parts_to_summarize = _chunk_text_for_summarization(pr_block, chunk_chars)
@@ -424,7 +430,7 @@ def _summarize_pr_chunks(
         _summarise_chunk_via_chat(chunk, model, token, effective_chat_endpoint, chunk_chars)
         for chunk in parts_to_summarize
     )
-    if _estimate_tokens(preamble + condensed + suffix) > backend_config["token_limit"]:
+    if _estimate_tokens(preamble + condensed + suffix) > token_limit:
         print("  [budget] Still over budget — consolidating summaries…")
         condensed = _summarise_chunk_via_chat(
             condensed, model, token, effective_chat_endpoint, chunk_chars
@@ -443,15 +449,16 @@ def call_github_models_api(  # pylint: disable=too-many-arguments,too-many-posit
     chat_model_override: str | None = None,
     embedding_model_override: str | None = None,
     model_override: str | None = None,
-    backend_config: dict[str, Any] | None = None,
+    chat_endpoint: str = "https://models.github.ai/inference/chat/completions",
+    embeddings_endpoint: str = "https://models.github.ai/inference/embeddings",
+    token_limit: int = 7500,
 ) -> str:
     """Call GitHub Models API with token-budget-aware prompt reduction."""
-    config = DEFAULT_BACKEND_CONFIG | (backend_config or {})
     token = resolve_token()
 
-    configured_chat_model = prompt.get("model", config["default_chat_model"])
+    configured_chat_model = prompt.get("model", "openai/gpt-4o")
     chat_model = configured_chat_model
-    embedding_model = config["default_embedding_model"]
+    embedding_model = "openai/text-embedding-3-small"
 
     # Backward compatibility: a single legacy model override still works.
     if model_override and not chat_model_override and not embedding_model_override:
@@ -467,22 +474,24 @@ def call_github_models_api(  # pylint: disable=too-many-arguments,too-many-posit
 
     all_text = " ".join(m.get("content", "") for m in prompt.get("messages", []))
     estimated = _estimate_tokens(all_text)
-    if estimated > config["token_limit"]:
+    if estimated > token_limit:
         print(
             f"  [budget] Prompt ~{estimated} tokens exceeds "
-            f"{config['token_limit']} limit — reducing…"
+            f"{token_limit} limit — reducing…"
         )
-        if _probe_embedding_support(embedding_model, token, config["embeddings_endpoint"]):
+        if _probe_embedding_support(embedding_model, token, embeddings_endpoint):
             prompt = _trim_prompt_via_embeddings(
                 prompt,
                 embedding_model,
                 token,
-                config,
+                chat_endpoint,
+                embeddings_endpoint,
+                token_limit,
             )
         else:
-            prompt = _summarize_pr_chunks(prompt, chat_model, token, config)
+            prompt = _summarize_pr_chunks(prompt, chat_model, token, chat_endpoint, token_limit)
 
-    endpoint = os.getenv("MODELS_ENDPOINT", config["chat_endpoint"])
+    endpoint = os.getenv("MODELS_ENDPOINT", chat_endpoint)
     model_parameters = prompt.get("modelParameters", {})
     payload: dict[str, Any] = {"model": chat_model, "messages": prompt["messages"]}
     if "maxCompletionTokens" in model_parameters:
@@ -532,54 +541,113 @@ def _probe_request(
         ) from err
 
 
-def probe_capabilities(  # pylint: disable=too-many-arguments,too-many-positional-arguments,too-many-locals
-    token: str,
-    chat_model: str,
-    embedding_model: str | None,
-    chat_endpoint: str,
-    embeddings_endpoint: str,
-    probe_embeddings: bool,
-) -> dict[str, bool]:
-    """Probe GitHub Models chat/embedding support for selected models."""
-    chat_payload = {
-        "model": chat_model,
-        "messages": [{"role": "user", "content": "Reply with 'ok'."}],
-        "max_completion_tokens": 8,
-    }
-    chat_response = _probe_request(chat_endpoint, chat_payload, token)
-    content = (
-        chat_response.get("choices", [{}])[0]
-        .get("message", {})
-        .get("content", "")
-    )
-    if not isinstance(content, str) or not content.strip():
-        raise RuntimeError(
-            "GitHub Models chat capability probe returned empty content. "
-            f"request_payload={json.dumps(chat_payload, ensure_ascii=True)} "
-            f"response_body={json.dumps(chat_response, ensure_ascii=True)}"
-        )
+class GitHubBackend(Backend):
+    """GitHub Models backend instance with resolved model and endpoint configuration."""
 
-    supports_embeddings = False
-    if probe_embeddings:
-        model = embedding_model or DEFAULT_BACKEND_CONFIG["default_embedding_model"]
-        embed_payload = {"model": model, "input": ["test"]}
+    DEFAULT_CHAT_MODEL = "openai/gpt-4o"
+    DEFAULT_EMBEDDING_MODEL = "openai/text-embedding-3-small"
+    DEFAULT_CHAT_ENDPOINT = "https://models.github.ai/inference/chat/completions"
+    DEFAULT_EMBEDDINGS_ENDPOINT = "https://models.github.ai/inference/embeddings"
+    DEFAULT_TOKEN_LIMIT = 7500
+
+    def __init__(
+        self,
+        chat_model: str | None,
+        embedding_model: str | None,
+        chat_endpoint: str = DEFAULT_CHAT_ENDPOINT,
+        embeddings_endpoint: str = DEFAULT_EMBEDDINGS_ENDPOINT,
+    ) -> None:
+        self.chat_model = chat_model or self.DEFAULT_CHAT_MODEL
+        self.embedding_model = embedding_model or self.DEFAULT_EMBEDDING_MODEL
+        self.chat_endpoint = chat_endpoint
+        self.embeddings_endpoint = embeddings_endpoint
+
+    def _resolve_token(self) -> str:
+        """Resolve the GitHub API token, falling back to gh CLI when env vars are absent."""
+        raw = os.getenv("GH_TOKEN") or os.getenv("GITHUB_TOKEN")
+        if not raw:
+            try:
+                raw = subprocess.check_output(
+                    ["gh", "auth", "token"], text=True, stderr=subprocess.STDOUT
+                )
+            except FileNotFoundError:
+                raise RuntimeError(
+                    "GH_TOKEN/GITHUB_TOKEN is not set and GitHub CLI ('gh') is not installed. "
+                    "Install gh or set GH_TOKEN/GITHUB_TOKEN."
+                ) from None
+            except subprocess.CalledProcessError as err:
+                details = (err.output or "").strip()
+                msg = "GH_TOKEN/GITHUB_TOKEN is not set and 'gh auth token' failed."
+                if details:
+                    msg += f"\ngh output: {details}"
+                raise RuntimeError(msg) from err
+
+        token = raw.replace("\r", "").replace("\n", "").strip()
+        if token.lower().startswith("bearer "):
+            token = token[7:].strip()
+        if any(ch.isspace() for ch in token) or any(ord(ch) < 32 or ord(ch) == 127 for ch in token):
+            raise RuntimeError(
+                "GitHub token contains whitespace/control characters after normalization. "
+                "Set GH_TOKEN/GITHUB_TOKEN to the raw token value."
+            )
+        if not token:
+            raise RuntimeError("GitHub token is empty after normalization.")
+        return token
+
+    def probe_chat_capability(self) -> bool:
+        """Probe GitHub Models chat support for the configured chat model."""
+        chat_payload = {
+            "model": self.chat_model,
+            "messages": [{"role": "user", "content": "Reply with 'ok'."}],
+            "max_completion_tokens": 8,
+        }
+        chat_response = _probe_request(self.chat_endpoint, chat_payload, self._resolve_token())
+        content = (
+            chat_response.get("choices", [{}])[0]
+            .get("message", {})
+            .get("content", "")
+        )
+        if not isinstance(content, str) or not content.strip():
+            raise RuntimeError(
+                "GitHub Models chat capability probe returned empty content. "
+                f"request_payload={json.dumps(chat_payload, ensure_ascii=True)} "
+                f"response_body={json.dumps(chat_response, ensure_ascii=True)}"
+            )
+        return True
+
+    def probe_embedding_capability(self) -> bool:
+        """Probe GitHub Models embedding support for the configured embedding model."""
+        embed_payload = {"model": self.embedding_model, "input": ["test"]}
         try:
-            embed_response = _probe_request(embeddings_endpoint, embed_payload, token)
+            embed_response = _probe_request(self.embeddings_endpoint, embed_payload, self._resolve_token())
             data = embed_response.get("data") or []
             vector = data[0].get("embedding") if data and isinstance(data[0], dict) else None
-            supports_embeddings = isinstance(vector, list) and bool(vector)
-            if not supports_embeddings:
+            if not isinstance(vector, list) or not vector:
                 raise RuntimeError(
                     "GitHub Models embeddings probe returned no embedding vector. "
                     f"request_payload={json.dumps(embed_payload, ensure_ascii=True)} "
                     f"response_body={json.dumps(embed_response, ensure_ascii=True)}"
                 )
+            return True
         except RuntimeError as err:
             print(
                 "Warning: GitHub embeddings capability probe failed; "
                 "continuing with chat-only staged mode. "
                 f"{err}"
             )
-            supports_embeddings = False
+            return False
 
-    return {"supports_chat": True, "supports_embeddings": supports_embeddings}
+    def call_chat(self, prompt: dict[str, Any]) -> str | None:
+        return call_github_models_api(
+            prompt,
+            resolve_token=self._resolve_token,
+            chat_model_override=self.chat_model,
+            embedding_model_override=self.embedding_model,
+            chat_endpoint=self.chat_endpoint,
+            embeddings_endpoint=self.embeddings_endpoint,
+            token_limit=self.DEFAULT_TOKEN_LIMIT,
+        )
+
+
+register_backend("github", GitHubBackend)
+register_backend("actions", GitHubBackend)

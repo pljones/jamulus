@@ -6,18 +6,9 @@ import argparse
 import os
 from dataclasses import dataclass, field
 
-GITHUB_DEFAULT_CHAT_MODEL = "openai/gpt-4o"
-GITHUB_DEFAULT_EMBEDDING_MODEL = "openai/text-embedding-3-small"
-OLLAMA_DEFAULT_CHAT_MODEL = "mistral-large-3:675b-cloud"
-OLLAMA_DEFAULT_EMBEDDING_MODEL = "nomic-embed-text"
-
-
-@dataclass
-class BackendCapabilities:
-    """Runtime capability probe result for the selected backend/models."""
-
-    supports_chat: bool
-    supports_embeddings: bool = False
+from .backends.base import BACKEND_REGISTRY, BackendCapabilities
+from .backends.github_backend import GitHubBackend  # noqa: F401 — triggers registration
+from .backends.ollama_backend import OllamaBackend  # noqa: F401 — triggers registration
 
 
 @dataclass
@@ -49,17 +40,23 @@ class BackendConfig:  # pylint: disable=too-many-instance-attributes
 
 
 def _default_chat_model_for_backend(backend: str) -> str:
+    cls = BACKEND_REGISTRY.get(backend)
+    if cls is None:
+        return "unknown"
+    model = cls.DEFAULT_CHAT_MODEL
     if backend == "ollama":
-        return os.getenv("OLLAMA_MODEL", OLLAMA_DEFAULT_CHAT_MODEL)
-    return GITHUB_DEFAULT_CHAT_MODEL
+        model = os.getenv("OLLAMA_MODEL", model)
+    return model
 
 
 def _default_embedding_model_for_backend(backend: str) -> str | None:
-    if backend in {"github", "actions"}:
-        return GITHUB_DEFAULT_EMBEDDING_MODEL
-    if backend == "ollama":
-        return os.getenv("OLLAMA_EMBEDDING_MODEL", OLLAMA_DEFAULT_EMBEDDING_MODEL)
-    return None
+    cls = BACKEND_REGISTRY.get(backend)
+    if cls is None:
+        return None
+    model = cls.DEFAULT_EMBEDDING_MODEL
+    if backend == "ollama" and model:
+        model = os.getenv("OLLAMA_EMBEDDING_MODEL", model)
+    return model
 
 
 def _parse_model_selector(raw: str, selected_backend: str) -> tuple[str, str | None]:
@@ -68,7 +65,7 @@ def _parse_model_selector(raw: str, selected_backend: str) -> tuple[str, str | N
         return selected_backend, raw
 
     prefix, remainder = raw.split(":", 1)
-    if prefix in {"ollama", "github", "actions"}:
+    if prefix in BACKEND_REGISTRY:
         if remainder == "":
             return prefix, None
         return prefix, remainder
@@ -118,6 +115,11 @@ def resolve_backend_config(args: argparse.Namespace) -> BackendConfig:
 
 def validate_cli_args(parser: argparse.ArgumentParser, args: argparse.Namespace) -> None:
     """Validate cross-argument invariants before startup probing or processing."""
+    if BACKEND_REGISTRY.get(args.backend) is None:
+        parser.error(
+            f"--backend {args.backend!r} is registered but not available in this environment."
+        )
+
     if args.staged_mode and args.pipeline != "staged":
         parser.error("--staged-mode is only valid when --pipeline staged is set.")
 
@@ -168,8 +170,8 @@ def build_arg_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--backend",
         default="ollama",
-        choices=["ollama", "github", "actions"],
-        help="LLM backend to use (actions: for GitHub Actions workflows)",
+        choices=sorted(BACKEND_REGISTRY),
+        help="LLM backend to use (actions: for GitHub Actions workflows; dummy: tests only)",
     )
     parser.add_argument(
         "--delay-secs",

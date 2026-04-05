@@ -1,0 +1,8 @@
+# Extraction stage prompt — placeholder (replaced in Step 7)
+#
+# The file name and YAML structure are fixed; only the system message content
+# changes between steps.  Do not rename or restructure this file.
+messages:
+  - role: system
+    content: >
+      placeholder

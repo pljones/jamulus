@@ -1,8 +1,15 @@
 from __future__ import annotations
 
+import sys
 from pathlib import Path
 
 import pytest
+
+# Ensure the project root is on sys.path so prepare_pr_context can import
+# tests.dummy_backend when --backend dummy is tested.
+_PROJECT_ROOT = Path(__file__).resolve().parents[1]
+if str(_PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(_PROJECT_ROOT))
 
 from release_announcement import main as ra_main
 
@@ -26,25 +33,37 @@ def test_prepare_pr_context_legacy_returns_none(capsys: pytest.CaptureFixture[st
     assert "staged.preprocessing" not in capsys.readouterr().out
 
 
-def test_prepare_pr_context_staged_logs_all_stub_stages(
+def test_prepare_pr_context_staged_dummy_runs_full_pipeline(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    config = ra_main.BackendConfig(backend="github", pipeline_mode="staged")
+    """With --backend dummy, staged mode runs all pipeline stages and returns context."""
+    config = ra_main.BackendConfig(backend="dummy", pipeline_mode="staged")
+
+    context = ra_main.prepare_pr_context(_sample_pr_data(), config, "staged")
+
+    assert context is not None
+    output = capsys.readouterr().out
+    assert "staged.preprocessing.start" in output
+    assert "staged.chunking.start" in output
+    assert "staged.chunking.end" in output
+    assert "staged.selection.start" in output
+    assert "staged.extraction.start" in output
+    assert "staged.consolidation.start" in output
+    assert "staged.classification.start" in output
+    assert "staged.preprocessing.end context=ok" in output
+
+
+def test_prepare_pr_context_staged_non_dummy_returns_none(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Backends without a staged adapter return None for graceful fallback."""
+    config = ra_main.BackendConfig(backend="ollama", pipeline_mode="staged")
 
     context = ra_main.prepare_pr_context(_sample_pr_data(), config, "staged")
 
     assert context is None
     output = capsys.readouterr().out
-    assert "staged.preprocessing.start" in output
-    assert "staged.chunking.start" in output
-    assert "staged.chunking.end" in output
-    assert "staged.extraction.start" in output
-    assert "staged.extraction.end" in output
-    assert "staged.consolidation.start" in output
-    assert "staged.consolidation.end" in output
-    assert "staged.classification.start" in output
-    assert "staged.classification.end" in output
-    assert "staged.preprocessing.end context=none" in output
+    assert "staged.preprocessing.unavailable" in output
 
 
 def test_process_single_pr_staged_falls_back_to_legacy_builder(

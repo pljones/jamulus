@@ -168,14 +168,23 @@ def test_chat_only_skips_embedding_probe(monkeypatch: pytest.MonkeyPatch) -> Non
     config = _resolve(["--pipeline", "staged", "--staged-mode", "chat-only", "--backend", "ollama"])
     calls: list[bool] = []
 
-    def _fake_probe(**kwargs):
-        calls.append(bool(kwargs["probe_embeddings"]))
-        return {"supports_chat": True, "supports_embeddings": False}
+    from release_announcement.backends.ollama_backend import OllamaBackend
+    from release_announcement.backends.base import BackendCapabilities
 
-    monkeypatch.setattr(ra_main, "probe_ollama_backend_capabilities", _fake_probe)
+    def _fake_probe_chat(self: OllamaBackend) -> bool:
+        calls.append("chat")
+        return True
+
+    def _fake_probe_embed(self: OllamaBackend) -> bool:
+        calls.append("embed")
+        return False
+
+    monkeypatch.setattr(OllamaBackend, "probe_chat_capability", _fake_probe_chat)
+    monkeypatch.setattr(OllamaBackend, "probe_embedding_capability", _fake_probe_embed)
 
     caps = ra_main.probe_capabilities(config)
 
-    assert calls == [False]
+    assert "chat" in calls
+    assert "embed" not in calls
     assert caps.supports_embeddings is False
     assert config.capabilities.supports_embeddings is False
