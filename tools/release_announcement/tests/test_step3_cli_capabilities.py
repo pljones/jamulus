@@ -104,10 +104,10 @@ def test_chat_prefix_only_uses_backend_default() -> None:
     assert config.chat_model_backend == "github"
 
 
-def test_embedding_prefix_only_uses_backend_default() -> None:
+def test_embedding_prefix_only_ollama_resolves_to_none() -> None:
     config = _resolve(["--embedding-model", "ollama:"])
 
-    assert config.embedding_model == "nomic-embed-text"
+    assert config.embedding_model is None
     assert config.embedding_model_backend == "ollama"
 
 
@@ -188,3 +188,72 @@ def test_chat_only_skips_embedding_probe(monkeypatch: pytest.MonkeyPatch) -> Non
     assert "embed" not in calls
     assert caps.supports_embeddings is False
     assert config.capabilities.supports_embeddings is False
+
+
+def test_embedding_assisted_attempts_probe_and_downgrades_on_failure(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    config = _resolve(
+        [
+            "--pipeline",
+            "staged",
+            "--staged-mode",
+            "embedding-assisted",
+            "--backend",
+            "ollama",
+            "--embedding-model",
+            "dummy-missing-embed-model",
+        ]
+    )
+    calls: list[str] = []
+
+    from release_announcement.backends.ollama_backend import OllamaBackend
+
+    def _fake_probe_chat(self: OllamaBackend) -> bool:
+        calls.append("chat")
+        return True
+
+    def _fake_probe_embed(self: OllamaBackend) -> bool:
+        calls.append("embed")
+        return False
+
+    monkeypatch.setattr(OllamaBackend, "probe_chat_capability", _fake_probe_chat)
+    monkeypatch.setattr(OllamaBackend, "probe_embedding_capability", _fake_probe_embed)
+
+    caps = ra_main.probe_capabilities(config)
+    ra_main.validate_mode(config)
+
+    assert calls == ["chat", "embed"]
+    assert caps.supports_embeddings is False
+    assert config.staged_mode == "chat-only"
+    assert "downgrading to chat-only" in capsys.readouterr().out
+
+
+def test_embedding_assisted_probe_can_succeed_with_mocked_dummy_embedding(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    config = _resolve(
+        [
+            "--pipeline",
+            "staged",
+            "--staged-mode",
+            "embedding-assisted",
+            "--backend",
+            "ollama",
+            "--embedding-model",
+            "dummy-embed-model",
+        ]
+    )
+
+    from release_announcement.backends.ollama_backend import OllamaBackend
+
+    monkeypatch.setattr(OllamaBackend, "probe_chat_capability", lambda self: True)
+    monkeypatch.setattr(OllamaBackend, "probe_embedding_capability", lambda self: True)
+
+    caps = ra_main.probe_capabilities(config)
+    ra_main.validate_mode(config)
+
+    assert caps.supports_embeddings is True
+    assert config.capabilities.supports_embeddings is True
+    assert config.staged_mode == "embedding-assisted"

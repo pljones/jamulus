@@ -53,11 +53,11 @@ def test_prepare_pr_context_staged_dummy_runs_full_pipeline(
     assert "staged.preprocessing.end context=ok" in output
 
 
-def test_prepare_pr_context_staged_non_dummy_returns_none(
+def test_prepare_pr_context_staged_github_returns_none(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     """Backends without a staged adapter return None for graceful fallback."""
-    config = ra_main.BackendConfig(backend="ollama", pipeline_mode="staged")
+    config = ra_main.BackendConfig(backend="github", pipeline_mode="staged")
 
     context = ra_main.prepare_pr_context(_sample_pr_data(), config, "staged")
 
@@ -92,6 +92,7 @@ def test_process_single_pr_staged_falls_back_to_legacy_builder(
     monkeypatch.setattr(ra_main, "_process_with_llm", lambda *_args, **_kwargs: "updated")
     monkeypatch.setattr(ra_main, "_write_and_check_announcement", lambda *_args, **_kwargs: None)
     monkeypatch.setattr(ra_main, "_check_for_changes", lambda *_args, **_kwargs: "no_changes")
+    monkeypatch.setattr(ra_main, "prepare_pr_context", lambda *_args, **_kwargs: None)
 
     result = ra_main.process_single_pr(
         pr_num=123,
