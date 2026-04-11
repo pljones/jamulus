@@ -2,14 +2,15 @@
 
 from __future__ import annotations
 
+
 import argparse
 import os
 from dataclasses import dataclass, field
 
-GITHUB_DEFAULT_CHAT_MODEL = "openai/gpt-4o"
-GITHUB_DEFAULT_EMBEDDING_MODEL = "openai/text-embedding-3-small"
-OLLAMA_DEFAULT_CHAT_MODEL = "mistral-large-3:675b-cloud"
-OLLAMA_DEFAULT_EMBEDDING_MODEL = "nomic-embed-text"
+from .registry import BackendRegistry
+
+# Default backend for BackendConfig instantiation
+DEFAULT_BACKEND = "ollama"
 
 
 @dataclass
@@ -48,53 +49,40 @@ class BackendConfig:  # pylint: disable=too-many-instance-attributes
     embedding_model_source: str = "default"
 
 
-def _default_chat_model_for_backend(backend: str) -> str:
-    if backend == "ollama":
-        return os.getenv("OLLAMA_MODEL", OLLAMA_DEFAULT_CHAT_MODEL)
-    return GITHUB_DEFAULT_CHAT_MODEL
 
 
-def _default_embedding_model_for_backend(backend: str) -> str | None:
-    if backend in {"github", "actions"}:
-        return GITHUB_DEFAULT_EMBEDDING_MODEL
-    if backend == "ollama":
-        return os.getenv("OLLAMA_EMBEDDING_MODEL", OLLAMA_DEFAULT_EMBEDDING_MODEL)
-    return None
 
 
-def _parse_model_selector(raw: str, selected_backend: str) -> tuple[str, str | None]:
-    """Parse optional BACKEND:model syntax, preserving backend-specific model tags."""
-    if ":" not in raw:
-        return selected_backend, raw
+def _parse_model_selector(raw: str, selected_backend: str | None = None) -> tuple[str, str | None]:
+    """Parse optional BACKEND/model syntax, preserving backend-specific model tags.
+    If selected_backend is None, uses DEFAULT_BACKEND."""
+    backend = selected_backend if selected_backend is not None else DEFAULT_BACKEND
+    if "/" not in raw:
+        return backend, raw
 
-    prefix, remainder = raw.split(":", 1)
-    if prefix in {"ollama", "github", "actions"}:
-        if remainder == "":
-            return prefix, None
-        return prefix, remainder
-    return selected_backend, raw
+    prefix, remainder = raw.split("/", 1)
+    # Accept any prefix as backend, per plan (no explicit backend names)
+    if remainder == "":
+        return prefix, None
+    return prefix, remainder
 
 
 def _resolve_chat_selection(args: argparse.Namespace) -> ModelSelection:
     if args.chat_model is None:
-        backend = args.backend
-        model = _default_chat_model_for_backend(backend)
-        return ModelSelection(model=model, backend=backend, source="default")
+        backend = args.backend if args.backend is not None else DEFAULT_BACKEND
+        return ModelSelection(model=None, backend=backend, source="default")
 
     backend, model = _parse_model_selector(args.chat_model, args.backend)
-    resolved_model = model if model is not None else _default_chat_model_for_backend(backend)
-    return ModelSelection(model=resolved_model, backend=backend, source="flag")
+    return ModelSelection(model=model, backend=backend, source="flag")
 
 
 def _resolve_embedding_selection(args: argparse.Namespace) -> ModelSelection:
     if args.embedding_model is None:
-        backend = args.backend
-        model = None if backend == "ollama" else _default_embedding_model_for_backend(backend)
-        return ModelSelection(model=model, backend=backend, source="default")
+        backend = args.backend if args.backend is not None else DEFAULT_BACKEND
+        return ModelSelection(model=None, backend=backend, source="default")
 
     backend, model = _parse_model_selector(args.embedding_model, args.backend)
-    resolved_model = model if model is not None else _default_embedding_model_for_backend(backend)
-    return ModelSelection(model=resolved_model, backend=backend, source="flag")
+    return ModelSelection(model=model, backend=backend, source="flag")
 
 
 def resolve_backend_config(args: argparse.Namespace) -> BackendConfig:
@@ -102,17 +90,33 @@ def resolve_backend_config(args: argparse.Namespace) -> BackendConfig:
     chat = _resolve_chat_selection(args)
     embedding = _resolve_embedding_selection(args)
 
+    # Get the backend to probe for defaults if no model is provided
+    backend_name = args.backend if args.backend is not None else DEFAULT_BACKEND
+    backend = BackendRegistry.get_backend(backend_name)
+
+    # If no chat model is provided, use the backend's default
+    if chat.model is None and backend is not None:
+        chat_model = backend._default_chat_model if hasattr(backend, "_default_chat_model") else None
+    else:
+        chat_model = chat.model
+
+    # If no embedding model is provided, use the backend's default
+    if embedding.model is None and backend is not None:
+        embedding_model = backend._default_embedding_model if hasattr(backend, "_default_embedding_model") else None
+    else:
+        embedding_model = embedding.model
+
     return BackendConfig(
-        backend=args.backend,
-        chat_model=chat.model,
-        embedding_model=embedding.model,
+        backend=backend_name,
+        chat_model=chat_model,
+        embedding_model=embedding_model,
         dry_run=args.dry_run,
         pipeline_mode=args.pipeline,
         staged_mode=args.staged_mode,
         chat_model_backend=chat.backend,
         embedding_model_backend=embedding.backend,
-        chat_model_source=chat.source,
-        embedding_model_source=embedding.source,
+        chat_model_source=chat.source if chat.model is not None else "backend-default",
+        embedding_model_source=embedding.source if embedding.model is not None else "backend-default",
     )
 
 
@@ -167,8 +171,6 @@ def build_arg_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--backend",
-        default="ollama",
-        choices=["ollama", "github", "actions"],
         help="LLM backend to use (actions: for GitHub Actions workflows)",
     )
     parser.add_argument(

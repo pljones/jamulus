@@ -22,8 +22,9 @@ def test_defaults_to_ollama_chat_and_no_embedding(monkeypatch: pytest.MonkeyPatc
     config = _resolve([])
 
     assert config.backend == "ollama"
-    assert config.chat_model == "mistral-large-3:675b-cloud"
+    assert config.chat_model is None  # Backend provides default at runtime
     assert config.embedding_model is None
+    assert config.chat_model_source == "backend-default"
 
 
 def test_backend_ollama_defaults(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -51,7 +52,7 @@ def test_ollama_chat_model_override(monkeypatch: pytest.MonkeyPatch) -> None:
 
 def test_ollama_embedding_model_override_with_prefix(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.delenv("OLLAMA_MODEL", raising=False)
-    config = _resolve(["--backend", "ollama", "--embedding-model", "ollama:nomic-embed-text"])
+    config = _resolve(["--backend", "ollama", "--embedding-model", "ollama/nomic-embed-text"])
 
     assert config.embedding_model == "nomic-embed-text"
     assert config.chat_model == "mistral-large-3:675b-cloud"
@@ -60,7 +61,7 @@ def test_ollama_embedding_model_override_with_prefix(monkeypatch: pytest.MonkeyP
 def test_github_embedding_model_override_from_ollama_backend(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.delenv("OLLAMA_MODEL", raising=False)
     config = _resolve(
-        ["--backend", "ollama", "--embedding-model", "github:text-embedding-3-small"]
+        ["--backend", "ollama", "--embedding-model", "github/text-embedding-3-small"]
     )
 
     assert config.embedding_model == "text-embedding-3-small"

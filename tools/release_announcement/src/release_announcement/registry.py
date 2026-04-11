@@ -268,4 +268,7 @@ def _get_actions_backend() -> LegacyActionsBackend:
 # Register legacy backends lazily
 registry.register("ollama", _get_ollama_backend())
 registry.register("github", _get_github_backend())
-registry.register("actions", _get_actions_backend())
+
+# Actions backend requires GITHUB_TOKEN, so only register if it's set
+if os.getenv("GITHUB_TOKEN") is not None:
+    registry.register("actions", _get_actions_backend())
