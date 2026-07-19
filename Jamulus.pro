@@ -249,8 +249,57 @@ win32 {
 } else:android {
     ANDROID_ABIS = armeabi-v7a arm64-v8a x86 x86_64
     ANDROID_VERSION_NAME = $$VERSION
-    ANDROID_VERSION_CODE = $$system(git log --oneline | wc -l)
-    message("Setting ANDROID_VERSION_NAME=$${ANDROID_VERSION_NAME} ANDROID_VERSION_CODE=$${ANDROID_VERSION_CODE}")
+
+    contains(VERSION, .*dev.*) {
+        # Dev builds are never distributed, so version code is irrelevant
+        # Use a fixed value to indicate "development/local build"
+        ANDROID_VERSION_CODE = 1
+        message("Dev build - ANDROID_VERSION_CODE set to 1 (not for distribution)")
+    } else {
+        # Release/alpha/beta/rc builds need reproducible version codes
+        # Strip pre-release suffixes (both dashed and non-dashed formats)
+        VERSION_CLEAN = $$replace(VERSION, -.*,)
+        VERSION_CLEAN = $$replace(VERSION_CLEAN, alpha.*,)
+        VERSION_CLEAN = $$replace(VERSION_CLEAN, beta.*,)
+        VERSION_CLEAN = $$replace(VERSION_CLEAN, rc.*,)
+        VERSION_CLEAN = $$replace(VERSION_CLEAN, dev.*,)
+        
+        VERSION_PARTS = $$split(VERSION_CLEAN, .)
+        VERSION_MAJOR = $$member(VERSION_PARTS, 0)
+        VERSION_MINOR = $$member(VERSION_PARTS, 1)
+        VERSION_PATCH = $$member(VERSION_PARTS, 2)
+
+        VERSION_TYPE = 9  # Default to release
+        VERSION_NUM = 0
+
+        contains(VERSION, .*alpha.*) {
+            VERSION_TYPE = 0
+            VERSION_NUM = $$replace(VERSION, .*alpha\.?(\d+).*, \1)
+            !contains(VERSION_NUM, ^[0-9]+$) { VERSION_NUM = 0 }
+        } else:contains(VERSION, .*beta.*) {
+            VERSION_TYPE = 5
+            VERSION_NUM = $$replace(VERSION, .*beta\.?(\d+).*, \1)
+            !contains(VERSION_NUM, ^[0-9]+$) { VERSION_NUM = 0 }
+        } else:contains(VERSION, .*rc.*) {
+            VERSION_TYPE = 8
+            VERSION_NUM = $$replace(VERSION, .*rc\.?(\d+).*, \1)
+            !contains(VERSION_NUM, ^[0-9]+$) { VERSION_NUM = 0 }
+        }
+
+        # Ensure numeric values before using format_number
+        !contains(VERSION_MAJOR, ^[0-9]+$) { VERSION_MAJOR = 0 }
+        !contains(VERSION_MINOR, ^[0-9]+$) { VERSION_MINOR = 0 }
+        !contains(VERSION_PATCH, ^[0-9]+$) { VERSION_PATCH = 0 }
+
+        # Calculate: major(2) + minor(2) + patch(2) + type(1) + num(1)
+        # Max value: 99,999,999 (well below Google Play limit of 2,100,000,000)
+        ANDROID_VERSION_CODE = $$format_number($$VERSION_MAJOR, width=2 zeropad)
+        ANDROID_VERSION_CODE = $${ANDROID_VERSION_CODE}$$format_number($$VERSION_MINOR, width=2 zeropad)
+        ANDROID_VERSION_CODE = $${ANDROID_VERSION_CODE}$$format_number($$VERSION_PATCH, width=2 zeropad)
+        ANDROID_VERSION_CODE = $${ANDROID_VERSION_CODE}$${VERSION_TYPE}$${VERSION_NUM}
+
+        message("Release/pre-release build - ANDROID_VERSION_NAME=$${ANDROID_VERSION_NAME} ANDROID_VERSION_CODE=$${ANDROID_VERSION_CODE}")
+    }
 
     # liboboe requires C++17 for std::timed_mutex
     CONFIG += c++17
