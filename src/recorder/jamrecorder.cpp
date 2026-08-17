@@ -221,6 +221,11 @@ CJamSession::~CJamSession()
  */
 void CJamSession::DisconnectClient ( int iChID )
 {
+    if ( vecptrJamClients[iChID] == nullptr )
+    {
+        return;
+    }
+
     vecptrJamClients[iChID]->Disconnect();
 
     jamClientConnections.append ( new CJamClientConnection ( vecptrJamClients[iChID]->NumAudioChannels(),
@@ -486,6 +491,7 @@ void CJamRecorder::OnAboutToQuit()
     QThread::currentThread()->exit();
 }
 
+// ChIdMutex held
 void CJamRecorder::ReaperProjectFromCurrentSession()
 {
     QString         reaperProjectFileName = currentSession->SessionDir().filePath ( currentSession->Name().append ( ".rpp" ) );
@@ -511,6 +517,7 @@ void CJamRecorder::ReaperProjectFromCurrentSession()
     }
 }
 
+// ChIdMutex held
 void CJamRecorder::AudacityLofFromCurrentSession()
 {
     QString         audacityLofFileName = currentSession->SessionDir().filePath ( currentSession->Name().append ( ".lof" ) );
@@ -589,7 +596,6 @@ void CJamRecorder::SessionDirToReaper ( QString& strSessionDirName, int serverFr
  */
 void CJamRecorder::OnDisconnected ( int iChID )
 {
-    QMutexLocker mutexLocker ( &ChIdMutex );
     if ( !isRecording )
     {
         qWarning() << "CJamRecorder::OnDisconnected: channel" << iChID << "disconnected but not recording";
@@ -600,6 +606,7 @@ void CJamRecorder::OnDisconnected ( int iChID )
         return;
     }
 
+    QMutexLocker mutexLocker ( &ChIdMutex );
     currentSession->DisconnectClient ( iChID );
 }
 
