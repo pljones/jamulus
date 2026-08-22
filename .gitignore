@@ -38,6 +38,8 @@ build/
 deploy/
 build-gui/
 build-nox/
+android-build/
+android-Jamulus-deployment-settings.json
 jamulus.sln
 jamulus.vcxproj
 jamulus.vcxproj.filters
@@ -56,4 +58,9 @@ Jamulus.xcodeproj
 jamulus_plugin_import.cpp
 .github_release_changelog.md
 /debian/
+/android-build.settings
 .github/instructions/awesome-copilot-instructions
+*.jks
+**/*.log
+play-store/
+Copilot-Processing.md

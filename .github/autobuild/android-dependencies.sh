@@ -1,0 +1,10 @@
+#!/bin/bash
+
+# Values are consumed by scripts which source this file.
+# shellcheck disable=SC2034
+COMMANDLINETOOLS_VERSION=6858069
+ANDROID_NDK_VERSION=r21d
+ANDROID_PLATFORM=android-30
+ANDROID_BUILD_TOOLS=30.0.2
+AQTINSTALL_VERSION="${AQTINSTALL_VERSION:-3.3.0}"
+QT_VERSION="${QT_VERSION:-5.15.2}"

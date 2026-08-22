@@ -182,12 +182,119 @@ If you want to build the installer, please run the `deploy_mac.sh` script: `./ma
 
 ## Android
 
-- Install Qt, including the Android support from the Qt installer
-- Follow Qt's [Getting Started with Qt for Android](https://doc.qt.io/qt-5/android-getting-started.html) instructions
-- Make sure Jamulus submodules are present, notably oboe:
-  `git submodule update --init`
-- Open Jamulus.pro in Qt Creator
-- Now you should be able to Build & Run for Android.
+- Install Qt 5.15.2 for Android, including `qtbase`, `qttools`,
+    `qttranslations`, `qtandroidextras`, and `qtmultimedia`.
+- Install an Android SDK with the platform and build-tools versions selected
+    below, an Android NDK 21.0.6113669, and JDK 11. Qt 5.15.2's generated
+    Gradle 5.6.4 project is not compatible with newer JDKs such as JDK 21.
+    The GitHub workflow installs these dependencies on its runner; developers
+    install them once using their normal system or Qt tooling.
+- Make sure the Jamulus submodules are present, notably oboe:
+    `git submodule update --init --recursive`
+- For a local build that matches the autobuild workflow, use
+    `tools/android-build.sh`. It applies the toolchain defaults below, loads
+    optional overrides, sets `JAMULUS_BUILD_VERSION` from `Jamulus.pro` (and
+    the git hash for development versions), and passes that same environment
+    to every `android.sh` stage:
+
+    ```bash
+    tools/android-build.sh --log build.log
+    ```
+
+    Copy `tools/android-build.settings.example` to `android-build.settings` in
+    the repository root (gitignored) for machine-specific paths, ABI/mode
+    subsets, and signing settings. Inspect the resolved environment with
+    `--print-env`.
+- Export the paths for the installed tools if you call `android.sh` directly.
+    For the standard local layout:
+
+    ```bash
+    export JAVA_HOME=/usr/lib/jvm/java-11-openjdk-amd64
+    export PATH="$JAVA_HOME/bin:$PATH"
+    export ANDROID_SDK_ROOT=/opt/android-sdk
+    export ANDROID_NDK_ROOT="$ANDROID_SDK_ROOT/ndk/21.0.6113669"
+    export ANDROID_BUILD_TOOLS_REVISION=30.0.0
+    export QT_ANDROID_DIR=/opt/Qt/5.15.2/android
+    export ANDROID_DEPLOYMENT_PLATFORM=android-34
+    ```
+
+    `QT_ANDROID_DIR` and `ANDROID_DEPLOYMENT_PLATFORM` are optional when the
+    tools are discoverable and the default platform is installed.
+- The Android driver defaults to all four ABIs, both debug and release builds,
+  and no publication. It also uses the SDK, NDK, and qmake project defaults
+  shown above. Build both installable APKs using the same driver as the workflow:
+
+    ```bash
+    .github/autobuild/android.sh build
+    ```
+
+    The outputs are written below `android-build/debug/` and
+    `android-build/release/`
+
+    The final APKs are renamed to `deploy/` for Github, after running
+    `get-artifacts`. This uses `JAMULUS_BUILD_VERSION` and the build mode
+    for the name - for example `jamulus_3.12.4_android_release.apk`.
+    If `JAMULUS_BUILD_VERSION` is unset, `get-artifacts` reads it from
+    `Jamulus.pro` the same way the autobuild workflow does.
+- Remove all generated Android build and deployment outputs with:
+
+    ```bash
+    .github/autobuild/android.sh distclean
+    ```
+
+    This removes `android-build/`, `deploy/`, and legacy qmake Android output
+    directories, but leaves unrelated untracked files in the checkout alone.
+- Select build modes explicitly with `JAMULUS_ANDROID_BUILD_MODES`, and select
+  a subset of ABIs with `JAMULUS_ANDROID_ABIS`:
+
+    ```bash
+    JAMULUS_ANDROID_BUILD_MODES=release \
+    JAMULUS_ANDROID_ABIS="arm64-v8a x86_64" \
+    tools/android-build.sh build get-artifacts
+    ```
+
+    Add qmake configuration values with `JAMULUS_ANDROID_QMAKE_CONFIG`:
+
+    ```bash
+    JAMULUS_ANDROID_QMAKE_CONFIG="serveronly disable_version_check" \
+    .github/autobuild/android.sh build
+    ```
+
+    Set `JAMULUS_ANDROID_SDK_ROOT`, `JAMULUS_ANDROID_NDK_ROOT`, or
+    `QT_ANDROID_DIR` to use different installed toolchains. Set
+    `ANDROID_DEPLOYMENT_PLATFORM` to select the Android SDK platform.
+- Release builds use the normal positive Git revision count as their Android
+    version code for non-development versions. Development builds default to
+    version code `1`. Set `JAMULUS_ANDROID_VERSION_CODE` when a build needs an
+    explicit positive version code.
+- Android release packages must be signed. Without signing options,
+    `androiddeployqt` uses the debug key, which is suitable for a temporary
+    sideload but not for a production update path. To use a retained keystore:
+
+    ```bash
+    export JAMULUS_ANDROID_KEYSTORE=/path/to/jamulus-upload.jks
+    export JAMULUS_ANDROID_KEY_ALIAS=jamulus
+    export JAMULUS_ANDROID_KEYSTORE_PASSWORD='...'
+    export JAMULUS_ANDROID_KEY_PASSWORD='...'
+    JAMULUS_ANDROID_BUILD_MODES=release tools/android-build.sh build get-artifacts
+    ```
+
+    A keystore can be created for sideloading with `keytool`. Keep it and its
+    passwords outside the repository. GitHub Actions can receive the same
+    keystore as the base64-encoded `ANDROID_KEYSTORE` secret; the workflow also
+    reads `ANDROID_KEY_ALIAS`, `ANDROID_KEYSTORE_PASSWORD`, and
+    `ANDROID_KEY_PASSWORD`.
+- Publication is disabled by default. Set `JAMULUS_ANDROID_PUBLISH=play-store`
+    to produce a signed release AAB for Play Store upload. This is intended for
+    the autobuild workflow after it has confirmed that the release and all
+    signing credentials are available; it is not needed for ordinary developer
+    builds.
+- An APK can be installed directly with `adb`. An AAB is intended for Play
+    Store or another bundle-aware service; use `bundletool` to turn an AAB into
+    installable APKs for sideload testing.
+- The legacy `qmake ... && make apk` command remains available for a local
+    release build, but `.github/autobuild/android.sh` is the supported path for
+    selecting debug/release modes and package/signing options.
 
 ## Compile time arguments
 
