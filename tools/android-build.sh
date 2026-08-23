@@ -28,6 +28,8 @@
 
 set -euo pipefail
 
+set -x
+
 SCRIPT_NAME="$(basename "$0")"
 readonly SCRIPT_NAME
 PROJECT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"

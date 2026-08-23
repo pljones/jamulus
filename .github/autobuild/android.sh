@@ -50,6 +50,8 @@ set -eu
 
 set -o pipefail
 
+set -x
+
 PROJECT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 readonly PROJECT_DIR
 # shellcheck disable=SC1091
