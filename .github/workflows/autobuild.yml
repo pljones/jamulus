@@ -80,7 +80,7 @@ jobs:
       android_play_store_ready:     ${{ steps.android_play_store_ready.outputs.ready }}
       tag_name:                     ${{ steps.get-build-vars.outputs.RELEASE_TAG }}
       build_version:                ${{ steps.get-build-vars.outputs.BUILD_VERSION }}
-      build_all_targets:            ${{ steps.decide-build-targets.outputs.build_all_targets }}
+      build_all_targets:            false # ${{ steps.decide-build-targets.outputs.build_all_targets }}
     env:
       release_changelog_path:       ./.github_release_changelog.md
     # Set permissions. We need write permissions to content for creating/removing the release
@@ -258,7 +258,7 @@ jobs:
             building_on_os:         ubuntu-22.04
             base_command:           ./.github/autobuild/linux_deb.sh
             run_codeql:             true
-            is_main_build_target:   true
+            # is_main_build_target:   true
 
           - config_name:            Linux .deb armhf (artifacts)
             target_os:              linux
@@ -280,7 +280,7 @@ jobs:
             run_codeql:             false
             xcode_version:          16.3.0
             dependency_cache_key:   qt6
-            is_main_build_target:   true
+            # is_main_build_target:   true
 
           # Reminder: If Legacy is removed, be sure to add a dedicated job for CodeQL again.
           - config_name:            MacOS Legacy (artifacts+CodeQL)
@@ -294,7 +294,7 @@ jobs:
             # https://xcodereleases.com/
             xcode_version:          16.3.0
             dependency_cache_key:   qt5
-            is_main_build_target:   true
+            # is_main_build_target:   true
 
           - config_name:            iOS (artifacts)
             target_os:              ios
@@ -313,7 +313,7 @@ jobs:
             base_command:           powershell .\.github\autobuild\windows.ps1 -Stage
             run_codeql:             true
             dependency_cache_key:   asio
-            is_main_build_target:   true
+            # is_main_build_target:   true
 
           - config_name:            Windows JACK (artifact)
             target_os:              windows
@@ -417,7 +417,8 @@ jobs:
           ANDROID_SDK_ROOT:         ${{ matrix.config.target_os == 'android' && '/opt/android/android-sdk' || '' }}
           ANDROID_NDK_ROOT:         ${{ matrix.config.target_os == 'android' && '/opt/android/android-ndk' || '' }}
           JAMULUS_ANDROID_BUILD_MODES: debug release
-          JAMULUS_ANDROID_ABIS:        armeabi-v7a arm64-v8a x86 x86_64
+          #JAMULUS_ANDROID_ABIS:        armeabi-v7a arm64-v8a x86 x86_64
+          JAMULUS_ANDROID_ABIS:        arm64-v8a
           JAMULUS_ANDROID_QMAKE_CONFIG: ${{ vars.JAMULUS_ANDROID_QMAKE_CONFIG || '' }}
           JAMULUS_ANDROID_PUBLISH:     ${{ needs.create_release.outputs.publish_to_release == 'true' && needs.create_release.outputs.android_play_store_ready == 'true' && 'play-store' || '' }}
           # Optional base64-encoded Java keystore and credentials for release builds.
@@ -444,7 +445,8 @@ jobs:
         env:
           JAMULUS_BUILD_VERSION:    ${{ needs.create_release.outputs.build_version }}
           JAMULUS_ANDROID_BUILD_MODES: debug release
-          JAMULUS_ANDROID_ABIS:        armeabi-v7a arm64-v8a x86 x86_64
+          #JAMULUS_ANDROID_ABIS:        armeabi-v7a arm64-v8a x86 x86_64
+          JAMULUS_ANDROID_ABIS:        arm64-v8a
           JAMULUS_ANDROID_QMAKE_CONFIG: ${{ vars.JAMULUS_ANDROID_QMAKE_CONFIG || '' }}
           JAMULUS_ANDROID_PUBLISH:     ${{ needs.create_release.outputs.publish_to_release == 'true' && needs.create_release.outputs.android_play_store_ready == 'true' && 'play-store' || '' }}
 
