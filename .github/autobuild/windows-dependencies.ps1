@@ -3,7 +3,7 @@
 
 # Values are consumed by .github/autobuild/windows.ps1, windows/deploy_windows.ps2 and the dependency cache key.
 $Qt32Version = "5.15.2"
-$Qt64Version = "6.8.1"
+$Qt64Version = "6.11.2"
 $QtCompile32 = "msvc2019"
 $QtCompile64 = "msvc2022"
 $AqtinstallVersion = "3.3.0"
