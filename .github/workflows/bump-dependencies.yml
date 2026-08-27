@@ -16,7 +16,9 @@ on:
 
   # For rebasing:
   push:
-    branches: [main]
+    branches:
+      - main
+      - please-bump-me
 
 permissions:
   pull-requests: write
@@ -28,8 +30,8 @@ permissions:
 jobs:
   create-prs:
     name: Update ${{ matrix.components.name }} if necessary
+    #github.repository_owner == 'jamulussoftware' &&
     if: >-
-      github.repository_owner == 'jamulussoftware' &&
       github.event_name != 'pull_request_target'
     runs-on: ubuntu-latest
     strategy:
