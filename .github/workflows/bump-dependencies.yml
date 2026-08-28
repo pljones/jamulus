@@ -16,7 +16,9 @@ on:
 
   # For rebasing:
   push:
-    branches: [main]
+    branches:
+      - main
+      - please-bump-me
 
 permissions:
   pull-requests: write
@@ -28,8 +30,8 @@ permissions:
 jobs:
   create-prs:
     name: Update ${{ matrix.components.name }} if necessary
+    #github.repository_owner == 'jamulussoftware' &&
     if: >-
-      github.repository_owner == 'jamulussoftware' &&
       github.event_name != 'pull_request_target'
     runs-on: ubuntu-latest
     strategy:
@@ -92,7 +94,7 @@ jobs:
       - env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          set -eu
+          set -eux
           files=( .github/autobuild/*-dependencies{,_qt[56]}.* )
           echo "files: (${files[@]})"
           upstream_version="$(${{ matrix.components.get_upstream_version }})"
@@ -114,7 +116,7 @@ jobs:
           echo "upstream ${{ matrix.components.name }} (${upstream_version}) does not match local ${{ matrix.components.name }} (${local_version}), creating PR"
           git config --global user.email "actions@github.com"
           git config --global user.name "github-actions[bot]"
-          pr_branch=ci/bump-dependencies/${{ matrix.components.name }}
+          pr_branch=ci/bump-dependencies/${{ matrix.components.name }}-${GITHUB_REF_NAME}
           git checkout -b "${pr_branch}"
           # sed does not support replacements with overlapping or lookahead patterns as is the case with NSIS.
           # Therefore, use perl instead:
@@ -157,7 +159,7 @@ jobs:
               gh pr comment "${existing_pr}" --body "PR has been updated for version *${upstream_version}* by the workflow *${GITHUB_WORKFLOW}* (*${GITHUB_JOB}*)."
             fi
           else
-            gh pr create --base main --head "${pr_branch}" --title "${pr_title}" --body "${body}"
+            gh pr create --base "${GITHUB_REF_NAME}" --head "${pr_branch}" --title "${pr_title}" --body "${body}"
             echo 'When Github actions create a PR, no workflows/checks (e.g. autobuilds) run.'
             echo 'We do want autobuilds though, therefore, we push a slightly modified commit via the deploy key, which avoids this problem.'
             echo 'We have to wait some time in order to trigger a new event... Waiting 60sec now'
