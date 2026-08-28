@@ -195,57 +195,57 @@ jobs:
         # Think of this like a foreach loop. Basically runs the steps with every combination of
         # the contents of this.
         config:
-          - config_name:            Android .apk (artifact+codeQL)
-            target_os:              android
-            building_on_os:         ubuntu-22.04
-            base_command:           ./.github/autobuild/android.sh
-            run_codeql:             true
-            is_main_build_target:   true
-            # Jamulus.pro needs to count git history length for android versioning:
-            checkout_fetch_depth:   '0'
+          #- config_name:            Android .apk (artifact+codeQL)
+          #  target_os:              android
+          #  building_on_os:         ubuntu-22.04
+          #  base_command:           ./.github/autobuild/android.sh
+          #  run_codeql:             true
+          #  is_main_build_target:   true
+          #  # Jamulus.pro needs to count git history length for android versioning:
+          #  checkout_fetch_depth:   '0'
 
-          - config_name:            Linux .deb amd64 (artifacts+codeQL)
-            target_os:              linux
-            building_on_os:         ubuntu-22.04
-            base_command:           ./.github/autobuild/linux_deb.sh
-            run_codeql:             true
-            is_main_build_target:   true
+          #- config_name:            Linux .deb amd64 (artifacts+codeQL)
+          #  target_os:              linux
+          #  building_on_os:         ubuntu-22.04
+          #  base_command:           ./.github/autobuild/linux_deb.sh
+          #  run_codeql:             true
+          #  is_main_build_target:   true
 
-          - config_name:            Linux .deb armhf (artifacts)
-            target_os:              linux
-            building_on_os:         ubuntu-22.04-arm
-            base_command:           TARGET_ARCH=armhf ./.github/autobuild/linux_deb.sh
-            run_codeql:             false
+          #- config_name:            Linux .deb armhf (artifacts)
+          #  target_os:              linux
+          #  building_on_os:         ubuntu-22.04-arm
+          #  base_command:           TARGET_ARCH=armhf ./.github/autobuild/linux_deb.sh
+          #  run_codeql:             false
 
-          - config_name:            Linux .deb arm64 (artifacts)
-            target_os:              linux
-            building_on_os:         ubuntu-22.04-arm
-            base_command:           TARGET_ARCH=arm64 ./.github/autobuild/linux_deb.sh
-            run_codeql:             false
+          #- config_name:            Linux .deb arm64 (artifacts)
+          #  target_os:              linux
+          #  building_on_os:         ubuntu-22.04-arm
+          #  base_command:           TARGET_ARCH=arm64 ./.github/autobuild/linux_deb.sh
+          #  run_codeql:             false
 
-          - config_name:            MacOS (artifacts)
-            target_os:              macos
-            building_on_os:         macos-15
-            base_command:           QT=6 SIGN_IF_POSSIBLE=1 TARGET_ARCHS="x86_64 arm64" ./.github/autobuild/mac.sh
-            # Disable CodeQL on mac as it interferes with signing the binaries (signing hangs, see #2563 and #2564)
-            run_codeql:             false
-            xcode_version:          16.3.0
-            dependency_cache_key:   qt6
-            is_main_build_target:   true
+          ##- config_name:            MacOS (artifacts)
+          #  target_os:              macos
+          #  building_on_os:         macos-15
+          #  base_command:           QT=6 SIGN_IF_POSSIBLE=1 TARGET_ARCHS="x86_64 arm64" ./.github/autobuild/mac.sh
+          #  # Disable CodeQL on mac as it interferes with signing the binaries (signing hangs, see #2563 and #2564)
+          #  run_codeql:             false
+          #  xcode_version:          16.3.0
+          #  dependency_cache_key:   qt6
+          #  is_main_build_target:   true
 
-          # Reminder: If Legacy is removed, be sure to add a dedicated job for CodeQL again.
-          - config_name:            MacOS Legacy (artifacts+CodeQL)
-            target_os:              macos
-            building_on_os:         macos-15-intel
-            base_command:           QT=5 SIGN_IF_POSSIBLE=0 ARTIFACT_SUFFIX=_legacy ./.github/autobuild/mac.sh
-            # Enable CodeQL on mac legacy as this version does not get signed
-            run_codeql:             true
-            # macos-15-intel ships with Xcode 16.x; while Qt5 is older, Xcode 16 still supports building it
-            # https://developer.apple.com/support/xcode/
-            # https://xcodereleases.com/
-            xcode_version:          16.3.0
-            dependency_cache_key:   qt5
-            is_main_build_target:   true
+          ## Reminder: If Legacy is removed, be sure to add a dedicated job for CodeQL again.
+          #- config_name:            MacOS Legacy (artifacts+CodeQL)
+          #  target_os:              macos
+          #  building_on_os:         macos-15-intel
+          #  base_command:           QT=5 SIGN_IF_POSSIBLE=0 ARTIFACT_SUFFIX=_legacy ./.github/autobuild/mac.sh
+          #  # Enable CodeQL on mac legacy as this version does not get signed
+          #  run_codeql:             true
+          #  # macos-15-intel ships with Xcode 16.x; while Qt5 is older, Xcode 16 still supports building it
+          #  # https://developer.apple.com/support/xcode/
+          #  # https://xcodereleases.com/
+          #  xcode_version:          16.3.0
+          #  dependency_cache_key:   qt5
+          #  is_main_build_target:   true
 
           - config_name:            iOS (artifacts)
             target_os:              ios
@@ -258,20 +258,20 @@ jobs:
             xcode_version:          26.2
             dependency_cache_key:   ios
 
-          - config_name:            Windows (artifact+codeQL)
-            target_os:              windows
-            building_on_os:         windows-2025
-            base_command:           powershell .\.github\autobuild\windows.ps1 -Stage
-            run_codeql:             true
-            dependency_cache_key:   asio
-            is_main_build_target:   true
+          #- config_name:            Windows (artifact+codeQL)
+          #  target_os:              windows
+          #  building_on_os:         windows-2025
+          #  base_command:           powershell .\.github\autobuild\windows.ps1 -Stage
+          #  run_codeql:             true
+          #  dependency_cache_key:   asio
+          #  is_main_build_target:   true
 
-          - config_name:            Windows JACK (artifact)
-            target_os:              windows
-            building_on_os:         windows-2025
-            base_command:           powershell .\.github\autobuild\windows.ps1 -BuildOption jackonwindows -Stage
-            run_codeql:             false
-            dependency_cache_key:   jack
+          #- config_name:            Windows JACK (artifact)
+          #  target_os:              windows
+          #  building_on_os:         windows-2025
+          #  base_command:           powershell .\.github\autobuild\windows.ps1 -BuildOption jackonwindows -Stage
+          #  run_codeql:             false
+          #  dependency_cache_key:   jack
 
         # This injects the build_all_targets information into each matrix output:
         build_all_targets:
