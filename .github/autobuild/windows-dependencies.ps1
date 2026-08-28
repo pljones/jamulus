@@ -14,6 +14,6 @@ $JomVersion = "1.1.2"
 # - Do not update ASIO SDK without checking for license-related changes.
 # - Do not copy (parts of) the ASIO SDK into the Jamulus source tree without
 #   further consideration as it would make the license situation more complicated.
-$AsioSDKVersion = "2.3.4_2025-10-15"
+$AsioSDKVersion = "ASIO-SDK_2.3.4_2025-10-15"
 
 $NsisVersion = "3.12"
