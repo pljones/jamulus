@@ -330,9 +330,12 @@ kit for the first `TARGET_ARCHS` value, such as
     [`.github/workflows/autobuild.yml`](.github/workflows/autobuild.yml) uploads
     the signed AAB only when manually dispatched with
     `android_play_store_upload` as an all-target publishable release. It needs
-    the independent `GOOGLE_SERVICE_ACCOUNT_JSON` service-account secret. By
-    default the job uses Internal App Sharing;
-    `android_play_store_real_publish` uploads a beta draft.
+    two repository variables:
+    - `GCP_WORKLOAD_IDENTITY_PROVIDER`: the project ID and pool / provider location details
+      (example: `projects/123456789123/locations/global/workloadIdentityPools/github-pool/providers/github`)
+    - `GCP_SERVICE_ACCOUNT_EMAIL`: the IAM admin service account email address
+      (example: `github-play-upload@project-c46758fa-1d47-4789-abe.iam.gserviceaccount.com`)
+    By default the job uses Internal App Sharing; `android_play_store_real_publish` uploads a beta draft.
 - An APK can be installed directly with `adb`. An AAB is intended for Google
     Play or another bundle-aware service; use `bundletool` to turn an AAB into
     installable APKs for side-load testing.
