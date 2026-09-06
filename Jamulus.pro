@@ -288,6 +288,7 @@ win32 {
         src/android/androiddebug.cpp
 
     LIBS += -lOpenSLES
+    QMAKE_LFLAGS += -Wl,-z,max-page-size=16384
     ANDROID_PACKAGE_SOURCE_DIR = $$PWD/android
     DISTFILES += android/AndroidManifest.xml
 
