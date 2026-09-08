@@ -53,7 +53,7 @@ jobs:
             get_upstream_version: |
               latest_minor="$(curl -s https://download.qt.io/official_releases/qt/ | grep -oP 'href="\K[0-9.]+(?=/")' | sort --reverse --version-sort | head -n1)";
               curl -s https://download.qt.io/official_releases/qt/"${latest_minor}"/ | grep -oP 'href="\K[0-9.]+(?=/")' | sort --reverse --version-sort | head -n1
-            local_version_regex: ^(QT_VERSION=|\$Qt64Version = \")(6\.[0-9.]+)(|\")$
+            local_version_regex: ^(QT_VERSION=|\$Qt.*Version = \")(6\.[0-9.]+)(|\")$
 
           - name: jack
             changelog_name: bundled JACK (Windows-only)
@@ -90,7 +90,7 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -eu
-          files=( .github/autobuild/*-dependencies{,_qt[56]}.* )
+          files=( .github/autobuild/*-dependencies{,_legacy,_play-store,_qt[56]}.* )
           echo "files: (${files[@]})"
           upstream_version="$(${{ matrix.components.get_upstream_version }})"
           echo "upstream version: {${upstream_version}}"
