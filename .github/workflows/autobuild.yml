@@ -23,9 +23,10 @@
 #
 # Build target selection (see decide-build-targets step):
 #     Main targets (always built):
-#          - Android .apk, Linux amd64, macOS (both Qt5 legacy + Qt6), Windows (ASIO)
+#          - Android Legacy .apk, Linux amd64, macOS (both Qt5 legacy + Qt6),
+#            Windows (ASIO)
 #     Optional targets (built when build_all_targets=true):
-#          - iOS, Linux armhf/arm64, Windows JACK
+#          - Android Play Store .aab, iOS, Linux armhf/arm64, Windows JACK
 #     Triggers for building all targets:
 #          - Tag pushes (all releases)
 #          - Pushes to autobuild* branches
@@ -263,14 +264,27 @@ jobs:
         # Think of this like a foreach loop. Basically runs the steps with every combination of
         # the contents of this.
         config:
-          - config_name:            Android .apk (artifact+codeQL)
+          - config_name:            Android Legacy .apk (artifact+codeQL)
             target_os:              android
             building_on_os:         ubuntu-22.04
             # override runner environment variables to avoid picking up any pre-installed Android SDK/NDK/Qt versions
-            base_command:           QT_DIR= ANDROID_NDK_ROOT= ANDROID_SDK_ROOT= ./.github/autobuild/android.sh
+            base_command:           QT_DIR= ANDROID_NDK_ROOT= ANDROID_SDK_ROOT= JAMULUS_ANDROID_STREAM=legacy ./.github/autobuild/android.sh
             run_codeql:             true
             is_main_build_target:   true
-            dependency_cache_key:   android
+            dependency_cache_key:   android-legacy
+            android_play_store:     false
+            # Jamulus.pro needs to count git history length for android versioning:
+            checkout_fetch_depth:   '0'
+
+          - config_name:            Android Play Store .aab (artifacts)
+            target_os:              android
+            building_on_os:         ubuntu-22.04
+            # Builds project-signed API 36 AABs. Deliberately neither a main target nor CodeQL.
+            base_command:           QT_DIR= ANDROID_NDK_ROOT= ANDROID_SDK_ROOT= JAMULUS_ANDROID_STREAM=play-store BUILD_MODES=release ./.github/autobuild/android.sh
+            run_codeql:             false
+            dependency_cache_key:   android-play-store
+            android_play_store:     true
+            requires_android_signing: true
             # Jamulus.pro needs to count git history length for android versioning:
             checkout_fetch_depth:   '0'
 
@@ -347,11 +361,18 @@ jobs:
         build_all_targets:
           - ${{ needs.create_release.outputs.build_all_targets }}
 
+        # This makes project-signing readiness available to matrix exclusions.
+        android_signing_ready:
+          - ${{ needs.create_release.outputs.android_signing_ready }}
+
         # Exclude all non-main build targets if we are not building for all targets:
         exclude:
           - build_all_targets:      'false'  # This is based on a script output and is therefore a string
             config:
               is_main_build_target:  null
+          - android_signing_ready:  'false'
+            config:
+              requires_android_signing: true
 
     runs-on:                        ${{ matrix.config.building_on_os }}
     steps:
@@ -377,7 +398,7 @@ jobs:
             ~/qt
             ~/android-sdk
             ~/android-ndk
-          key:                      ${{ matrix.config.target_os }}-${{ hashFiles('.github/autobuild/android-dependencies.sh') }}-${{ matrix.config.dependency_cache_key }}
+          key:                      ${{ matrix.config.target_os }}-${{ hashFiles('.github/autobuild/android-dependencies*.sh') }}-${{ matrix.config.dependency_cache_key }}
 
       - name:                       Cache iOS dependencies
         if:                         matrix.config.target_os == 'ios'
@@ -440,7 +461,7 @@ jobs:
           JAMULUS_ANDROID_KEY_ALIAS:         ${{ needs.create_release.outputs.android_signing_ready == 'true' && secrets.ANDROID_KEY_ALIAS || '' }}
           JAMULUS_ANDROID_KEYSTORE_PASSWORD: ${{ needs.create_release.outputs.android_signing_ready == 'true' && secrets.ANDROID_KEYSTORE_PASSWORD || '' }}
           JAMULUS_ANDROID_KEY_PASSWORD:      ${{ needs.create_release.outputs.android_signing_ready == 'true' && secrets.ANDROID_KEY_PASSWORD || '' }}
-          JAMULUS_ANDROID_PUBLISH:           ${{ needs.create_release.outputs.publish_to_release == 'true' && needs.create_release.outputs.android_play_store_ready == 'true' && 'play-store' || '' }}
+          JAMULUS_ANDROID_PUBLISH:           ${{ matrix.config.android_play_store && needs.create_release.outputs.publish_to_release == 'true' && needs.create_release.outputs.android_play_store_ready == 'true' && 'play-store' || '' }}
           #
           ## Creating certificates
           #  Generate the certificates from Xcode. You can Manage Certificates in Apple Accounts settings or the Apple Developer account page.
@@ -468,7 +489,7 @@ jobs:
         env:
           JAMULUS_BUILD_VERSION:        ${{ needs.create_release.outputs.build_version }}
           JAMULUS_ANDROID_QMAKE_CONFIG: ${{ vars.JAMULUS_ANDROID_QMAKE_CONFIG || '' }}
-          JAMULUS_ANDROID_PUBLISH:      ${{ needs.create_release.outputs.publish_to_release == 'true' && needs.create_release.outputs.android_play_store_ready == 'true' && 'play-store' || '' }}
+          JAMULUS_ANDROID_PUBLISH:      ${{ matrix.config.android_play_store && needs.create_release.outputs.publish_to_release == 'true' && needs.create_release.outputs.android_play_store_ready == 'true' && 'play-store' || '' }}
 
       - name:                       Upload Artifact 1 to Job
         # Every build job has at least one artifact. Therefore, no `if` here.
@@ -538,7 +559,7 @@ jobs:
   publish_android_play_store:
     name:                           Upload Android App Bundle to Google Play
     needs:                          [create_release, release_assets]
-    if:                             github.event_name == 'workflow_dispatch' && inputs.android_play_store_upload && needs.create_release.outputs.publish_to_release == 'true' && needs.create_release.outputs.android_play_store_ready == 'true'
+    if:                             github.event_name == 'workflow_dispatch' && inputs.android_play_store_upload && needs.create_release.outputs.build_all_targets == 'true' && needs.create_release.outputs.publish_to_release == 'true' && needs.create_release.outputs.android_play_store_ready == 'true'
     runs-on:                        ubuntu-22.04
     permissions:
       contents:                     read

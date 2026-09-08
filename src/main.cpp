@@ -61,8 +61,10 @@
 #    include "testbench.h"
 #endif
 #include "util.h"
-#ifdef ANDROID
+#if defined( ANDROID ) && QT_VERSION < QT_VERSION_CHECK( 6, 0, 0 )
 #    include <QtAndroidExtras/QtAndroid>
+#elif defined( ANDROID )
+#    include <QPermissions>
 #endif
 #if defined( Q_OS_MACOS )
 #    include "mac/activity.h"
@@ -889,7 +891,7 @@ int main ( int argc, char** argv )
 #    endif
 #endif
 
-#ifdef ANDROID
+#if defined( ANDROID ) && QT_VERSION < QT_VERSION_CHECK( 6, 0, 0 )
     // special Android coded needed for record audio permission handling
     auto result = QtAndroid::checkPermission ( QString ( "android.permission.RECORD_AUDIO" ) );
 
@@ -901,6 +903,22 @@ int main ( int argc, char** argv )
         {
             return 0;
         }
+    }
+#elif defined( ANDROID )
+    QMicrophonePermission microphonePermission;
+    const Qt::PermissionStatus microphonePermissionStatus = pApp->checkPermission ( microphonePermission );
+    if ( microphonePermissionStatus == Qt::PermissionStatus::Denied )
+    {
+        return 0;
+    }
+    if ( microphonePermissionStatus == Qt::PermissionStatus::Undetermined )
+    {
+        pApp->requestPermission ( microphonePermission, pApp, [pApp] ( const QPermission& permission ) {
+            if ( permission.status() == Qt::PermissionStatus::Denied )
+            {
+                pApp->quit();
+            }
+        } );
     }
 #endif
 
