@@ -64,5 +64,4 @@ jamulus_plugin_import.cpp
 **/*.log
 play-store/
 Copilot-Processing.md
-android-build_legacy.settings
-android-build_play-store.settings
+android-build_*.settings

@@ -34,19 +34,14 @@ PROJECT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 readonly PROJECT_DIR
 readonly ANDROID_SH="${PROJECT_DIR}/.github/autobuild/android.sh"
 readonly ANDROID_PLAY_STORE_SH="${PROJECT_DIR}/.github/autobuild/android-play-store.sh"
-readonly ANDROID_DEPENDENCIES="${PROJECT_DIR}/.github/autobuild/android-dependencies.sh"
 readonly GET_BUILD_VARS="${PROJECT_DIR}/.github/autobuild/get_build_vars.py"
-readonly DEFAULT_SETTINGS_FILE="${PROJECT_DIR}/android-build.settings"
-
-# shellcheck disable=SC1090
-source "$ANDROID_DEPENDENCIES"
 
 MANAGED_VARS=(
     JAVA_HOME
     ANDROID_SDK_ROOT
     ANDROID_NDK_ROOT
-    ANDROID_BUILD_TOOLS_REVISION
-    ANDROID_DEPLOYMENT_PLATFORM
+    ANDROID_BUILD_TOOLS
+    ANDROID_PLATFORM
     QT_SELECT
     QT_DIR
     QT_BASEDIR
@@ -54,9 +49,11 @@ MANAGED_VARS=(
     JAMULUS_BUILD_VERSION
     BUILD_MODES
     TARGET_ARCHS
-    JAMULUS_ANDROID_SDK_ROOT
-    JAMULUS_ANDROID_NDK_ROOT
     JAMULUS_ANDROID_QMAKE_CONFIG
+    JAMULUS_ANDROID_MAKE_JOBS
+    JAMULUS_ANDROID_STREAM
+    JAMULUS_ANDROID_ARTIFACT_SUFFIX
+    JAMULUS_ANDROID_PACKAGE_FORMAT
     JAMULUS_ANDROID_PUBLISH
     JAMULUS_ANDROID_KEYSTORE
     JAMULUS_ANDROID_KEYSTORE_BASE64
@@ -88,14 +85,21 @@ is_secret_var() {
 apply_local_defaults() {
     # Local developer layout from COMPILING.md. CI uses different /opt/android
     # paths after android.sh setup.
-    : "${JAVA_HOME:=/usr/lib/jvm/java-11-openjdk-amd64}"
+    : "${JAVA_HOME:=/usr/lib/jvm/java-${ANDROID_JAVA_VERSION:-11}-openjdk-amd64}"
     : "${ANDROID_SDK_ROOT:=/opt/android-sdk}"
-    : "${ANDROID_NDK_ROOT:=${ANDROID_SDK_ROOT}/ndk/21.0.6113669}"
-    : "${ANDROID_BUILD_TOOLS_REVISION:=${ANDROID_BUILD_TOOLS}}"
+    # NDK directory naming follows the numeric version per Qt profile (see COMPILING.md).
+    case "${JAMULUS_ANDROID_STREAM}" in
+        qt6 | play-store)
+            : "${ANDROID_NDK_ROOT:=${ANDROID_SDK_ROOT}/ndk/27.3.13750724}"
+            ;;
+        *)
+            : "${ANDROID_NDK_ROOT:=${ANDROID_SDK_ROOT}/ndk/21.0.6113669}"
+            ;;
+    esac
+    : "${ANDROID_BUILD_TOOLS:=}"
     : "${QT_SELECT:=${QT_VERSION}-android}"
     # android.sh derives QT_ANDROID_DIR itself as "${QT_DIR}/${QT_VERSION}/android"
     : "${QT_DIR:=/opt/Qt}"
-    : "${ANDROID_DEPLOYMENT_PLATFORM:=${ANDROID_PLATFORM}}"
     : "${BUILD_MODES:=debug release}"
     : "${TARGET_ARCHS:=armeabi-v7a arm64-v8a x86 x86_64}"
 }
@@ -206,8 +210,21 @@ resolve_settings_file() {
         printf '%s' "$JAMULUS_ANDROID_SETTINGS"
         return
     fi
-    if [[ -f "$DEFAULT_SETTINGS_FILE" ]]; then
-        printf '%s' "$DEFAULT_SETTINGS_FILE"
+    local default_settings_file="${PROJECT_DIR}/android-build_${ANDROID_PROFILE}.settings"
+    if [[ -f "$default_settings_file" ]]; then
+        printf '%s' "$default_settings_file"
+        return
+    fi
+    case "$ANDROID_PROFILE" in
+        qt5)
+            default_settings_file="${PROJECT_DIR}/android-build_legacy.settings"
+            ;;
+        qt6)
+            default_settings_file="${PROJECT_DIR}/android-build_play-store.settings"
+            ;;
+    esac
+    if [[ -f "$default_settings_file" ]]; then
+        printf '%s' "$default_settings_file"
     fi
 }
 
@@ -230,24 +247,25 @@ same environment for every stage. JAMULUS_BUILD_VERSION is taken from
 Jamulus.pro (plus the git hash for development versions) unless already set.
 
 Stages:
-  setup          Install CI-style SDK/NDK/Qt under /opt (rarely needed locally)
-  distclean      make distclean (if a Makefile exists) and android.sh distclean
-  build          Build selected debug/release packages
-  get-artifacts  Rename packages into deploy/
-  play-store     Prepare the release AAB in play-store/ for store upload
+    setup          Install CI-style SDK/NDK/Qt under /opt (rarely needed locally)
+    distclean      make distclean (if a Makefile exists) and android.sh distclean
+    build          Build selected debug/release packages
+    get-artifacts  Rename packages into deploy/
+    play-store     Prepare the release AAB in play-store/ for store upload
     all            distclean, build, and get-artifacts (default)
 
 Options:
-  -h, --help            Show this help
-  --settings FILE       Override file (default: android-build.settings if present)
-  --log FILE            Also write combined stdout/stderr to FILE
-  --print-env           Print the resolved environment and exit
-    --build-modes "MODES" Override BUILD_MODES (default: "debug release")
-    --archs "ARCHS"       Override TARGET_ARCHS (default: "armeabi-v7a arm64-v8a x86 x86_64")
+    -h, --help             Show this help
+    --settings FILE        Override file (default: android-build_qtVERSION.settings if present)
+    --stream STREAM        Select qt5 or qt6 settings (default: qt5)
+    --log FILE             Also write combined stdout/stderr to FILE
+    --print-env            Print the resolved environment and exit
+    --build-modes "MODES"  Override BUILD_MODES (default: "debug release")
+    --archs "ARCHS"        Override TARGET_ARCHS (default: "armeabi-v7a arm64-v8a x86 x86_64")
+    --jobs JOBS             Limit parallel compiler jobs (default: nproc)
 
-Precedence: command-line options > settings file > existing environment >
-documented local defaults.
-See tools/android-build.settings.example.
+Precedence: command-line options > settings file > existing environment > documented local defaults.
+See tools/android-build_qt5.settings.example and tools/android-build_qt6.settings.example.
 EOF
 }
 
@@ -257,6 +275,8 @@ PRINT_ENV=0
 STAGES=()
 OPTION_BUILD_MODES=""
 OPTION_TARGET_ARCHS=""
+OPTION_MAKE_JOBS=""
+OPTION_STREAM=""
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
@@ -277,6 +297,17 @@ while [[ $# -gt 0 ]]; do
         --archs)
             [[ $# -ge 2 ]] || error "missing value for --archs"
             OPTION_TARGET_ARCHS="$2"
+            shift 2
+            ;;
+        --jobs)
+            [[ $# -ge 2 ]] || error "missing value for --jobs"
+            [[ "$2" =~ ^[1-9][0-9]*$ ]] || error "--jobs must be a positive integer"
+            OPTION_MAKE_JOBS="$2"
+            shift 2
+            ;;
+        --stream)
+            [[ $# -ge 2 ]] || error "missing value for --stream"
+            OPTION_STREAM="$2"
             shift 2
             ;;
         --print-env)
@@ -311,12 +342,36 @@ cd "$PROJECT_DIR"
 [[ -x "$ANDROID_PLAY_STORE_SH" || -f "$ANDROID_PLAY_STORE_SH" ]] ||
     error "cannot find $ANDROID_PLAY_STORE_SH"
 
+JAMULUS_ANDROID_STREAM="${OPTION_STREAM:-${JAMULUS_ANDROID_STREAM:-qt5}}"
+case "$JAMULUS_ANDROID_STREAM" in
+    qt5 | legacy)
+        ANDROID_PROFILE=qt5
+        ;;
+    qt6 | play-store)
+        ANDROID_PROFILE=qt6
+        ;;
+    *)
+        error "unsupported Android build stream: $JAMULUS_ANDROID_STREAM"
+        ;;
+esac
+[[ -n "$ANDROID_PROFILE" ]] ||
+    error "unsupported Android build stream: $JAMULUS_ANDROID_STREAM"
+ANDROID_DEPENDENCIES="${PROJECT_DIR}/.github/autobuild/android-dependencies_${ANDROID_PROFILE}"
+ANDROID_DEPENDENCIES+=".sh"
+EXPLICIT_ANDROID_BUILD_TOOLS="${ANDROID_BUILD_TOOLS:-}"
+EXPLICIT_QT_VERSION="${QT_VERSION:-}"
+# shellcheck disable=SC1090
+source "$ANDROID_DEPENDENCIES"
+[[ -n "$EXPLICIT_ANDROID_BUILD_TOOLS" ]] && ANDROID_BUILD_TOOLS="$EXPLICIT_ANDROID_BUILD_TOOLS"
+[[ -n "$EXPLICIT_QT_VERSION" ]] && QT_VERSION="$EXPLICIT_QT_VERSION"
 load_settings_file "$(resolve_settings_file "$SETTINGS_FILE")"
 [[ -n "$OPTION_BUILD_MODES" ]] && BUILD_MODES="$OPTION_BUILD_MODES"
 [[ -n "$OPTION_TARGET_ARCHS" ]] && TARGET_ARCHS="$OPTION_TARGET_ARCHS"
+[[ -n "$OPTION_MAKE_JOBS" ]] && export JAMULUS_ANDROID_MAKE_JOBS="$OPTION_MAKE_JOBS"
 apply_local_defaults
 if has_stage play-store; then
     export JAMULUS_ANDROID_PUBLISH=play-store
+    export JAMULUS_ANDROID_PACKAGE_FORMAT=aab
 fi
 export_managed_env
 ensure_java_on_path

@@ -57,47 +57,122 @@ fi
 
 PROJECT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 readonly PROJECT_DIR
-# shellcheck disable=SC1091
-source "${PROJECT_DIR}/.github/autobuild/android-dependencies.sh"
+
+readonly ANDROID_STREAM="${JAMULUS_ANDROID_STREAM:-qt5}"
+readonly PUBLISH_MODE="${JAMULUS_ANDROID_PUBLISH:-}"
+case "$ANDROID_STREAM" in
+    qt5 | legacy)
+        ANDROID_DEPENDENCIES="${PROJECT_DIR}/.github/autobuild/android-dependencies_qt5.sh"
+        DEFAULT_ARTIFACT_SUFFIX="_qt5"
+        DEFAULT_PACKAGE_FORMAT="apk"
+        ;;
+    qt6 | play-store)
+        ANDROID_DEPENDENCIES="${PROJECT_DIR}/.github/autobuild/android-dependencies_qt6.sh"
+        DEFAULT_ARTIFACT_SUFFIX="_qt6"
+        DEFAULT_PACKAGE_FORMAT="apk"
+        ;;
+    *)
+        echo "Unsupported Android build stream: $ANDROID_STREAM" >&2
+        exit 1
+        ;;
+esac
+
+# Save environment before sourcing the dependencies file, so we can restore overrides.
+EXPLICIT_COMMANDLINETOOLS_VERSION="${COMMANDLINETOOLS_VERSION:-}"
+EXPLICIT_ANDROID_NDK_VERSION="${ANDROID_NDK_VERSION:-}"
+EXPLICIT_ANDROID_PLATFORM="${ANDROID_PLATFORM:-}"
+EXPLICIT_ANDROID_BUILD_TOOLS="${ANDROID_BUILD_TOOLS:-}"
+EXPLICIT_AQTINSTALL_VERSION="${AQTINSTALL_VERSION:-}"
+EXPLICIT_ANDROID_JAVA_VERSION="${ANDROID_JAVA_VERSION:-}"
+EXPLICIT_QT_VERSION="${QT_VERSION:-}"
+
+# shellcheck disable=SC1090
+source "$ANDROID_DEPENDENCIES"
+
+# Restore any explicit overrides from the environment, so they take precedence over the defaults in the dependencies file.
+[[ -n "${EXPLICIT_COMMANDLINETOOLS_VERSION}" ]] && COMMANDLINETOOLS_VERSION="${EXPLICIT_COMMANDLINETOOLS_VERSION}"
+[[ -n "${EXPLICIT_ANDROID_NDK_VERSION}" ]] && ANDROID_NDK_VERSION="${EXPLICIT_ANDROID_NDK_VERSION}"
+[[ -n "${EXPLICIT_ANDROID_PLATFORM}" ]] && ANDROID_PLATFORM="${EXPLICIT_ANDROID_PLATFORM}"
+[[ -n "${EXPLICIT_ANDROID_BUILD_TOOLS}" ]] && ANDROID_BUILD_TOOLS="${EXPLICIT_ANDROID_BUILD_TOOLS}"
+[[ -n "${EXPLICIT_AQTINSTALL_VERSION}" ]] && AQTINSTALL_VERSION="${EXPLICIT_AQTINSTALL_VERSION}"
+[[ -n "${EXPLICIT_ANDROID_JAVA_VERSION}" ]] && ANDROID_JAVA_VERSION="${EXPLICIT_ANDROID_JAVA_VERSION}"
+[[ -n "${EXPLICIT_QT_VERSION}" ]] && QT_VERSION="${EXPLICIT_QT_VERSION}"
 
 # Defaults must match the cache values in .github/workflows/autobuild.yml
-export ANDROID_SDK_ROOT="${JAMULUS_ANDROID_SDK_ROOT:-${ANDROID_SDK_ROOT:-${HOME}/android-sdk}}"
-export ANDROID_NDK_ROOT="${JAMULUS_ANDROID_NDK_ROOT:-${ANDROID_NDK_ROOT:-${HOME}/android-ndk}}"
+export ANDROID_SDK_ROOT="${ANDROID_SDK_ROOT:-${HOME}/android-sdk}"
+export ANDROID_NDK_ROOT="${ANDROID_NDK_ROOT:-${HOME}/android-ndk}"
 QT_DIR="${QT_DIR:-${HOME}/qt}"
+
+readonly TARGET_ARCHS="${TARGET_ARCHS:-armeabi-v7a arm64-v8a x86 x86_64}"
 
 # Ensure tools know where things are
 export ANDROID_HOME="${ANDROID_SDK_ROOT}"
 export ANDROID_NDK="${ANDROID_NDK_ROOT}"
 export ANDROID_NDK_HOME="${ANDROID_NDK_ROOT}"
 export ANDROID_NDK_LATEST_HOME="${ANDROID_NDK_ROOT}"
+export ANDROID_SDK_BUILD_TOOLS_REVISION="${ANDROID_BUILD_TOOLS}"
+export ANDROID_BUILD_TOOLS_REVISION="${ANDROID_BUILD_TOOLS}"
+
+qt_android_arch() {
+    case "$1" in
+        armeabi-v7a)
+            printf '%s' android_armv7
+            ;;
+        arm64-v8a)
+            printf '%s' android_arm64_v8a
+            ;;
+        x86 | x86_64)
+            printf '%s' "android_$1"
+            ;;
+        *)
+            echo "Unsupported Android ABI: $1" >&2
+            exit 1
+            ;;
+    esac
+}
 
 if [[ ! ${QT_VERSION:-} =~ [0-9]+\.[0-9]+\..* ]]; then
     echo "Environment variable QT_VERSION must be set to a valid Qt version"
     exit 1
 fi
 
-readonly QT_ANDROID_DIR="${QT_DIR}/${QT_VERSION}/android"
-export QT_SELECT="${QT_VERSION}-android"
+if [[ "${QT_VERSION}" =~ 5\..* ]]; then
+    QT_ANDROID_DIR="${QT_DIR}/${QT_VERSION}/android"
+    QT_ANDROIDDEPLOYQT="${QT_ANDROID_DIR}/bin/androiddeployqt"
+else
+    read -r -a target_archs <<< "${TARGET_ARCHS}"
+    QT_ANDROID_DIR="${QT_DIR}/${QT_VERSION}/$(qt_android_arch "${target_archs[0]}")"
+    QT_ANDROIDDEPLOYQT="${QT_DIR}/${QT_VERSION}/gcc_64/bin/androiddeployqt"
+fi
+readonly QT_ANDROID_DIR
+readonly QT_ANDROIDDEPLOYQT
+
+export QT_SELECT="${QT_VERSION}-$(basename "${QT_ANDROID_DIR}")"
 export QTTOOLDIR="${QT_ANDROID_DIR}/bin"
 export QTLIBDIR="${QT_ANDROID_DIR}/lib"
 
 readonly QT_QMAKE="${QT_ANDROID_DIR}/bin/qmake"
-readonly QT_ANDROIDDEPLOYQT="${QT_ANDROID_DIR}/bin/androiddeployqt"
-
-ANDROID_PLATFORM="${ANDROID_DEPLOYMENT_PLATFORM:-${ANDROID_PLATFORM}}"
 
 readonly BUILD_ROOT="${JAMULUS_ANDROID_BUILD_DIR:-${PROJECT_DIR}/android-build}"
 readonly DEPLOY_DIR="${JAMULUS_ANDROID_DEPLOY_DIR:-${PROJECT_DIR}/deploy}"
 readonly BUILD_MODES="${BUILD_MODES:-debug release}"
-readonly TARGET_ARCHS="${TARGET_ARCHS:-armeabi-v7a arm64-v8a x86 x86_64}"
 readonly QMAKE_CONFIG="${JAMULUS_ANDROID_QMAKE_CONFIG:-}"
-readonly PUBLISH_MODE="${JAMULUS_ANDROID_PUBLISH:-}"
+MAX_MAKE_JOBS="$(nproc)"
+readonly MAX_MAKE_JOBS
+readonly MAKE_JOBS="${JAMULUS_ANDROID_MAKE_JOBS:-${MAX_MAKE_JOBS}}"
+readonly ARTIFACT_SUFFIX="${JAMULUS_ANDROID_ARTIFACT_SUFFIX:-${DEFAULT_ARTIFACT_SUFFIX}}"
+readonly PACKAGE_FORMAT="${JAMULUS_ANDROID_PACKAGE_FORMAT:-${DEFAULT_PACKAGE_FORMAT}}"
+
+if [[ ! "$MAKE_JOBS" =~ ^[1-9][0-9]*$ ]] || (( MAKE_JOBS > MAX_MAKE_JOBS )); then
+    echo "JAMULUS_ANDROID_MAKE_JOBS must be a positive integer no greater than ${MAX_MAKE_JOBS}" >&2
+    exit 1
+fi
 
 # Only variables which are really needed by sub-commands are exported.
 # Definitions have to stay in a specific order due to dependencies.
 export PATH="${PATH}:${ANDROID_SDK_ROOT}/tools"
 export PATH="${PATH}:${ANDROID_SDK_ROOT}/platform-tools"
-export JAVA_HOME="${JAVA_HOME:-/usr/lib/jvm/java-8-openjdk-amd64/}"
+export JAVA_HOME="${JAVA_HOME:-/usr/lib/jvm/java-${ANDROID_JAVA_VERSION:-8}-openjdk-amd64/}"
 
 export JAMULUS_ANDROID_KEYSTORE="${JAMULUS_ANDROID_KEYSTORE:-}"
 export JAMULUS_ANDROID_KEYSTORE_BASE64="${JAMULUS_ANDROID_KEYSTORE_BASE64:-}"
@@ -111,11 +186,13 @@ readonly ANDROID_SDKMANAGER=("${COMMANDLINETOOLS_DIR}/bin/sdkmanager" "--sdk_roo
 readonly ANDROID_NDK_HOST="${ANDROID_NDK_HOST:-linux-x86_64}"
 readonly ANDROID_NDK_MAKE=${ANDROID_NDK_ROOT}/prebuilt/${ANDROID_NDK_HOST}/bin/make
 
+env | grep -E '^(ANDROID_BUILD_TOOLS_REVISION|ANDROID_HOME|ANDROID_NDK|ANDROID_NDK_HOME|ANDROID_NDK_LATEST_HOME|ANDROID_NDK_ROOT|ANDROID_SDK_BUILD_TOOLS_REVISION|ANDROID_SDK_ROOT|DEBIAN_FRONTEND|JAMULUS_ANDROID_KEY_ALIAS|JAMULUS_ANDROID_KEY_PASSWORD|JAMULUS_ANDROID_KEYSTORE|JAMULUS_ANDROID_KEYSTORE_BASE64|JAMULUS_ANDROID_KEYSTORE_PASSWORD|JAMULUS_BUILD_VERSION|JAVA_HOME|PATH|QTLIBDIR|QT_SELECT|QTTOOLDIR)=' | sort
+
 setup_ubuntu_dependencies() {
     export DEBIAN_FRONTEND="noninteractive"
 
     sudo apt-get -qq update
-    sudo apt-get -qq --no-install-recommends -y install build-essential zip unzip bzip2 p7zip-full curl chrpath openjdk-8-jdk-headless
+    sudo apt-get -qq --no-install-recommends -y install build-essential zip unzip bzip2 p7zip-full curl chrpath "openjdk-${ANDROID_JAVA_VERSION:-8}-jdk-headless"
 }
 
 setup_android_sdk() {
@@ -124,12 +201,23 @@ setup_android_sdk() {
     sudo mkdir -p "${COMMANDLINETOOLS_DIR}"
     sudo chown -R "$(whoami)" "${ANDROID_SDK_ROOT}"
 
-    if [[ -d "${COMMANDLINETOOLS_DIR}" && -x "${ANDROID_SDKMANAGER[0]}" ]]; then
-        echo "Using SDK installation from previous run (actions/cache)"
+    # sdkmanager doesn't record which cmdline-tools build we downloaded, so track that
+    # ourselves; platforms/build-tools are already installed under a directory named
+    # after the exact requested version, so no extra marker is needed for those.
+    local cmdlinetools_version_marker="${COMMANDLINETOOLS_DIR}/.jamulus-cmdlinetools-version"
+
+    if [[ -d "${COMMANDLINETOOLS_DIR}" && -x "${ANDROID_SDKMANAGER[0]}" &&
+        -f "$cmdlinetools_version_marker" &&
+        "$(cat "$cmdlinetools_version_marker")" == "${COMMANDLINETOOLS_VERSION}" &&
+        -d "${ANDROID_SDK_ROOT}/platforms/${ANDROID_PLATFORM}" &&
+        -d "${ANDROID_SDK_ROOT}/build-tools/${ANDROID_BUILD_TOOLS}" ]]; then
+        echo "Using SDK installation (cmdline-tools: ${COMMANDLINETOOLS_VERSION}, platforms: ${ANDROID_PLATFORM}, build-tools: ${ANDROID_BUILD_TOOLS}) from previous run (actions/cache)"
         return
     fi
 
-    echo "Installing SDK"
+    echo "Installing SDK (cmdline-tools: ${COMMANDLINETOOLS_VERSION}, platforms: ${ANDROID_PLATFORM}, build-tools: ${ANDROID_BUILD_TOOLS})"
+    # Clear any mismatched-version leftovers so files from different cmdline-tools builds can't mix.
+    rm -rf "${COMMANDLINETOOLS_DIR:?}"/*
     pushd "${COMMANDLINETOOLS_DIR}" > /dev/null
 
     curl -s -o downloadfile.zip "https://dl.google.com/android/repository/commandlinetools-linux-${COMMANDLINETOOLS_VERSION}_latest.zip"
@@ -140,6 +228,7 @@ setup_android_sdk() {
     rm -rf sdk-tmpdir
 
     popd > /dev/null
+    echo "${COMMANDLINETOOLS_VERSION}" > "$cmdlinetools_version_marker"
 
     set +o pipefail
     yes | "${ANDROID_SDKMANAGER[@]}" --licenses
@@ -160,15 +249,28 @@ setup_android_ndk() {
     sudo mkdir -p "${ANDROID_NDK_ROOT}"
     sudo chown -R "$(whoami)" "${ANDROID_NDK_ROOT}"
 
-    if [[ -f "${ANDROID_NDK_ROOT}/source.properties" && -x "${ANDROID_NDK_MAKE}" ]]; then
-        echo "Using NDK installation from previous run (actions/cache)"
+    # The NDK is unpacked flat into ANDROID_NDK_ROOT, so its directory layout
+    # doesn't encode the version; track it ourselves to validate cache hits.
+    local ndk_version_marker="${ANDROID_NDK_ROOT}/.jamulus-ndk-version"
+
+    if [[ -f "${ANDROID_NDK_ROOT}/source.properties" && -x "${ANDROID_NDK_MAKE}" &&
+        -f "$ndk_version_marker" && "$(cat "$ndk_version_marker")" == "${ANDROID_NDK_VERSION}" ]]; then
+        echo "Using NDK ${ANDROID_NDK_VERSION} installation from previous run (actions/cache)"
         return
     fi
 
-    echo "Installing NDK"
+    echo "Installing NDK ${ANDROID_NDK_VERSION}"
+    # Remove any mismatched-version leftovers so files from different NDK releases can't mix.
+    find "${ANDROID_NDK_ROOT}" -mindepth 1 -delete
     pushd "${ANDROID_NDK_ROOT}" > /dev/null
 
-    curl -s -o downloadfile.zip "https://dl.google.com/android/repository/android-ndk-${ANDROID_NDK_VERSION}-linux-x86_64.zip"
+    # Ugh... Should be optimised...
+    if [[ "${ANDROID_NDK_VERSION}" == "$( ( echo "r22b"; echo "${ANDROID_NDK_VERSION}" ) | sort | head -1)" ]]; then
+        suffix="-x86_64"
+    else
+        suffix=""
+    fi
+    curl -s -o downloadfile.zip "https://dl.google.com/android/repository/android-ndk-${ANDROID_NDK_VERSION}-linux${suffix}.zip"
     unzip -q downloadfile.zip -d ndk-tmpdir
     rm -f downloadfile.zip
 
@@ -176,17 +278,34 @@ setup_android_ndk() {
     rm -rf ndk-tmpdir
 
     popd > /dev/null
+    echo "${ANDROID_NDK_VERSION}" > "$ndk_version_marker"
 }
 
 setup_qt() {
+    local qt_arch
+
     # We may need to create the Qt installation directory and chown it to the runner user to fix permissions
     # (even after cache recovery)
     sudo mkdir -p "${QT_DIR}"
     sudo chown -R "$(whoami)" "${QT_DIR}"
 
+    # QT_QMAKE/QT_ANDROIDDEPLOYQT/per-arch qmake paths are all under a
+    # ${QT_VERSION}-named directory, so their presence already confirms the
+    # expected Qt version (and, for Qt6, each requested target arch) is installed.
     if [[ -x "${QT_QMAKE}" && -x "${QT_ANDROIDDEPLOYQT}" ]]; then
-        echo "Using Qt installation from previous run (actions/cache)"
-        return
+        if [[ "${QT_VERSION}" =~ 5\..* ]]; then
+            echo "Using Qt ${QT_VERSION} installation from previous run (actions/cache)"
+            return
+        fi
+        for target_arch in $TARGET_ARCHS; do
+            qt_arch="$(qt_android_arch "$target_arch")"
+            [[ -x "${QT_DIR}/${QT_VERSION}/${qt_arch}/bin/qmake" ]] || break
+        done
+        [[ -x "${QT_DIR}/${QT_VERSION}/${qt_arch}/bin/qmake" ]] || qt_arch=""
+        if [[ -n "$qt_arch" ]]; then
+            echo "Using Qt ${QT_VERSION} installation from previous run (actions/cache)"
+            return
+        fi
     fi
 
     echo "Installing Qt"
@@ -200,22 +319,35 @@ setup_qt() {
     pip install "aqtinstall==${AQTINSTALL_VERSION}"
 
     # Install actual Android Qt:
+    local qt_archives=(qtbase qttools qttranslations)
     local qtmultimedia=()
-    if [[ ! "${QT_VERSION}" =~ 5\..* ]]; then
+    if [[ "${QT_VERSION}" =~ 5\..* ]]; then
+        qt_archives+=(qtandroidextras qtmultimedia)
+        python3 -m aqt install-qt --outputdir "${QT_DIR}" linux android "${QT_VERSION}" \
+            --archives "${qt_archives[@]}"
+    else
         # From Qt6 onwards, qtmultimedia is a module and cannot be installed
         # as an archive anymore.
-        qtmultimedia=("--modules")
+        qtmultimedia=("--modules" qtmultimedia)
+        qt_archives+=(icu)
+        for target_arch in $TARGET_ARCHS; do
+            qt_arch="$(qt_android_arch "$target_arch")"
+            python3 -m aqt install-qt --outputdir "${QT_DIR}" linux android "${QT_VERSION}" "$qt_arch" \
+                --autodesktop --archives "${qt_archives[@]}" "${qtmultimedia[@]}"
+        done
     fi
-    qtmultimedia+=("qtmultimedia")
-
-    python3 -m aqt install-qt --outputdir "${QT_DIR}" linux android "${QT_VERSION}" \
-        --archives qtbase qttools qttranslations qtandroidextras \
-        "${qtmultimedia[@]}"
 
     # Delete libraries, which we don't use, but which bloat the resulting package and might introduce unwanted dependencies.
     # iOS does not do this - leave for now, fix across all later.
-    find "${QT_ANDROID_DIR}" -name 'libQt5*Quick*.so' -delete
-    rm -r "${QT_ANDROID_DIR}/qml/"
+    for target_arch in $TARGET_ARCHS; do
+        if [[ "${QT_VERSION}" =~ 5\..* ]]; then
+            qt_arch="$QT_ANDROID_DIR"
+        else
+            qt_arch="${QT_DIR}/${QT_VERSION}/$(qt_android_arch "$target_arch")"
+        fi
+        find "$qt_arch" -name 'libQt*Quick*.so' -delete
+        rm -rf "$qt_arch/qml/"
+    done
 
     # deactivate and remove venv as aqt is no longer needed from here on
     deactivate
@@ -239,15 +371,34 @@ validate_build_mode() {
         echo "Unsupported Android publication mode: $PUBLISH_MODE" >&2
         exit 1
     }
+    # Play Store preparation selects the artifact compiled with the release
+    # configuration. Signing is decided independently from the supplied keystore.
     [[ "$PUBLISH_MODE" == "" || " $BUILD_MODES " == *" release "* ]] || {
         echo "Play Store publication requires a release build" >&2
         exit 1
     }
-    if [[ "$PUBLISH_MODE" == play-store && -z "${JAMULUS_ANDROID_KEYSTORE:-}" &&
-        -z "${JAMULUS_ANDROID_KEYSTORE_BASE64:-}" ]]; then
-        echo "Play Store publication requires an Android keystore" >&2
+    [[ "$PACKAGE_FORMAT" == apk || "$PACKAGE_FORMAT" == aab ]] || {
+        echo "Unsupported Android package format: $PACKAGE_FORMAT" >&2
         exit 1
-    fi
+    }
+}
+
+validate_android_toolchain() {
+    [[ -f "${ANDROID_NDK_ROOT}/source.properties" ]] || {
+        echo "Selected Android NDK is not installed: ${ANDROID_NDK_ROOT}" >&2
+        echo "Run '$0 setup' or set ANDROID_NDK_ROOT to an installed NDK." >&2
+        exit 1
+    }
+    [[ -d "${ANDROID_SDK_ROOT}/platforms/${ANDROID_PLATFORM}" ]] || {
+        echo "Selected Android platform is not installed: ${ANDROID_SDK_ROOT}/platforms/${ANDROID_PLATFORM}" >&2
+        echo "Run '$0 setup' or install ${ANDROID_PLATFORM} with sdkmanager." >&2
+        exit 1
+    }
+    [[ -x "${ANDROID_SDK_ROOT}/build-tools/${ANDROID_BUILD_TOOLS}/aapt" ]] || {
+        echo "Selected Android build tools are not installed: ${ANDROID_SDK_ROOT}/build-tools/${ANDROID_BUILD_TOOLS}" >&2
+        echo "Run '$0 setup' or install build-tools;${ANDROID_BUILD_TOOLS} with sdkmanager." >&2
+        exit 1
+    }
 }
 
 validate_signing() {
@@ -300,9 +451,18 @@ prepare_keystore() {
 
     if [[ -n "${JAMULUS_ANDROID_KEYSTORE_BASE64:-}" ]]; then
         ANDROID_KEYSTORE_FILE=~/.jamulus-android-signing.jks
-        printf '%s' "$JAMULUS_ANDROID_KEYSTORE_BASE64" | base64 --decode > $ANDROID_KEYSTORE_FILE
-        chmod 600 $ANDROID_KEYSTORE_FILE
+        if ! touch "$ANDROID_KEYSTORE_FILE"; then
+            echo "Failed to create Android keystore file: $ANDROID_KEYSTORE_FILE" >&2
+            exit 1
+        fi
         trap 'rm -f $ANDROID_KEYSTORE_FILE' EXIT
+        local umask_value
+        (
+            umask_value="$(umask)"
+            umask 077
+            printf '%s' "$JAMULUS_ANDROID_KEYSTORE_BASE64" | base64 --decode > $ANDROID_KEYSTORE_FILE
+            umask "$umask_value"
+        )
     fi
 }
 
@@ -335,9 +495,9 @@ keystore_type() {
     local detected_type
 
     if [[ -z "$storepass" ]]; then
-        detected_type="$(keytool -list -keystore "$keystore_file" 2> /dev/null | awk 'BEGIN{IGNORECASE=1} /^Keystore type:/ {print $3; exit 0} END {exit 1}')"
+        detected_type="$(keytool -list -keystore "$keystore_file" 2> /dev/null | awk 'BEGIN{IGNORECASE=1; status=1} /^Keystore type:/ {print $3; status=0} END {exit status}')"
     else
-        detected_type="$(keytool -list -keystore "$keystore_file" -storepass "$storepass" 2> /dev/null | awk 'BEGIN{IGNORECASE=1} /^Keystore type:/ {print $3; exit 0} END {exit 1}')"
+        detected_type="$(keytool -list -keystore "$keystore_file" -storepass "$storepass" 2> /dev/null | awk 'BEGIN{IGNORECASE=1; status=1} /^Keystore type:/ {print $3; status=0} END {exit status}')"
     fi
 
     [[ -n "$detected_type" ]] || return 1
@@ -354,6 +514,8 @@ build_app() {
     local package_args=(--input "${build_dir}/android-Jamulus-deployment-settings.json"
         --output "${build_dir}" --android-platform "${ANDROID_PLATFORM}" --jdk "${JAVA_HOME}")
     if [[ -n "${ANDROID_KEYSTORE_FILE:-}" ]]; then
+        # androiddeployqt --release selects signed-release packaging. It is
+        # independent from qmake's debug/release compilation configuration.
         package_args+=(--release)
         local detected_keystore_type
         detected_keystore_type="$(keystore_type "${ANDROID_KEYSTORE_FILE}" "${JAMULUS_ANDROID_KEYSTORE_PASSWORD}")" || detected_keystore_type="unknown"
@@ -369,8 +531,8 @@ build_app() {
             echo "Android release signing: leaving keystore type unspecified for ${detected_keystore_type} keystore"
         fi
     fi
-    [[ "$build_mode" == release && "$PUBLISH_MODE" == play-store ]] && package_args+=(--aab)
-    echo "Android deploy args: ${package_args[*]}"
+    [[ "$PACKAGE_FORMAT" == aab ]] && package_args+=(--aab)
+    echo "Android packaging: format=$([ "$PACKAGE_FORMAT" == aab ] && echo 'AAB' || echo 'APK') platform=${ANDROID_PLATFORM}"
 
     local qmake_config=()
     for config in $QMAKE_CONFIG; do
@@ -383,11 +545,15 @@ build_app() {
     "${QT_QMAKE}" "${PROJECT_DIR}/Jamulus.pro" -spec android-clang \
         CONFIG+=android_single_config CONFIG+="${build_mode}" CONFIG-=debug_and_release \
         "${qmake_config[@]}"
-    "${ANDROID_NDK_MAKE}" -j "$(nproc)"
+    "${ANDROID_NDK_MAKE}" -j "$MAKE_JOBS"
     "${ANDROID_NDK_MAKE}" INSTALL_ROOT="${build_dir}" install
     popd > /dev/null
 
-    env | grep ANDROID | sort
+    # Diagnostic environment - non-secret variables only
+    echo "Android environment:"
+    for var in ANDROID_PLATFORM ANDROID_SDK_ROOT ANDROID_NDK_ROOT TARGET_ARCHS JAVA_HOME QT_HOST_PATH ANDROID_BUILD_TOOLS; do
+        [[ -n "${!var:-}" ]] && echo "  ${var}=${!var}"
+    done
     "${QT_ANDROIDDEPLOYQT}" "${package_args[@]}"
 }
 
@@ -408,9 +574,8 @@ pass_artifact_to_job() {
     local package_path
 
     for build_mode in $BUILD_MODES; do
-        extension=apk
-        [[ "$build_mode" == release && "$PUBLISH_MODE" == play-store ]] && extension=aab
-        artifact="jamulus_${JAMULUS_BUILD_VERSION}_android_${build_mode}.${extension}"
+        extension="$PACKAGE_FORMAT"
+        artifact="jamulus_${JAMULUS_BUILD_VERSION}_android_${build_mode}${ARTIFACT_SUFFIX}.${extension}"
         package_path="$(find "${BUILD_ROOT}/${build_mode}/build/outputs" -type f -name "*.${extension}" -print -quit)"
         [[ -n "$package_path" ]] || {
             echo "No Android ${extension} was produced for ${build_mode}" >&2
@@ -440,7 +605,8 @@ distclean_android() {
     for generated_path in \
         "$PROJECT_DIR/debug" "$PROJECT_DIR"/debug-* \
         "$PROJECT_DIR/release" "$PROJECT_DIR"/release-* \
-        "$PROJECT_DIR/.qm"; do
+        "$PROJECT_DIR/build" "$PROJECT_DIR/play-store" \
+        "$PROJECT_DIR/qmake_qmake_qm_files.qrc" "$PROJECT_DIR/.qm"; do
         [[ -e "$generated_path" ]] && rm -rf -- "$generated_path"
     done
 }
@@ -454,6 +620,7 @@ case "${1:-}" in
         ;;
     build)
         validate_build_mode
+        validate_android_toolchain
         validate_signing
         for build_mode in $BUILD_MODES; do
             build_app "$build_mode"
