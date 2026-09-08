@@ -63,7 +63,7 @@
 #include "util.h"
 #if defined( ANDROID ) && QT_VERSION < QT_VERSION_CHECK( 6, 0, 0 )
 #    include <QtAndroidExtras/QtAndroid>
-#elif defined( ANDROID )
+#elif defined( ANDROID ) && QT_VERSION >= QT_VERSION_CHECK( 6, 5, 0 )
 #    include <QPermissions>
 #endif
 #if defined( Q_OS_MACOS )
@@ -891,8 +891,12 @@ int main ( int argc, char** argv )
 #    endif
 #endif
 
+#if defined( ANDROID ) && QT_VERSION >= QT_VERSION_CHECK( 6, 5, 0 )
+    bool bMicrophonePermissionGranted = true;
+#endif
+
 #if defined( ANDROID ) && QT_VERSION < QT_VERSION_CHECK( 6, 0, 0 )
-    // special Android coded needed for record audio permission handling
+    // Qt 5 requests this permission synchronously before client construction.
     auto result = QtAndroid::checkPermission ( QString ( "android.permission.RECORD_AUDIO" ) );
 
     if ( result == QtAndroid::PermissionResult::Denied )
@@ -904,7 +908,7 @@ int main ( int argc, char** argv )
             return 0;
         }
     }
-#elif defined( ANDROID )
+#elif defined( ANDROID ) && QT_VERSION >= QT_VERSION_CHECK( 6, 5, 0 )
     QMicrophonePermission microphonePermission;
     const Qt::PermissionStatus microphonePermissionStatus = pApp->checkPermission ( microphonePermission );
     if ( microphonePermissionStatus == Qt::PermissionStatus::Denied )
@@ -913,12 +917,16 @@ int main ( int argc, char** argv )
     }
     if ( microphonePermissionStatus == Qt::PermissionStatus::Undetermined )
     {
-        pApp->requestPermission ( microphonePermission, pApp, [pApp] ( const QPermission& permission ) {
-            if ( permission.status() == Qt::PermissionStatus::Denied )
-            {
-                pApp->quit();
-            }
+        bMicrophonePermissionGranted = false;
+        pApp->requestPermission ( microphonePermission, pApp, [&bMicrophonePermissionGranted, pApp] ( const QPermission& permission ) {
+            bMicrophonePermissionGranted = permission.status() == Qt::PermissionStatus::Granted;
+            pApp->quit();
         } );
+        pApp->exec();
+        if ( !bMicrophonePermissionGranted )
+        {
+            return 0;
+        }
     }
 #endif
 

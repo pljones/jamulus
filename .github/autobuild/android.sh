@@ -333,6 +333,24 @@ validate_build_mode() {
     fi
 }
 
+validate_android_toolchain() {
+    [[ -f "${ANDROID_NDK_ROOT}/source.properties" ]] || {
+        echo "Selected Android NDK is not installed: ${ANDROID_NDK_ROOT}" >&2
+        echo "Run '$0 setup' or set ANDROID_NDK_ROOT to an installed NDK." >&2
+        exit 1
+    }
+    [[ -d "${ANDROID_SDK_ROOT}/platforms/${ANDROID_PLATFORM}" ]] || {
+        echo "Selected Android platform is not installed: ${ANDROID_SDK_ROOT}/platforms/${ANDROID_PLATFORM}" >&2
+        echo "Run '$0 setup' or install ${ANDROID_PLATFORM} with sdkmanager." >&2
+        exit 1
+    }
+    [[ -x "${ANDROID_SDK_ROOT}/build-tools/${ANDROID_BUILD_TOOLS}/aapt" ]] || {
+        echo "Selected Android build tools are not installed: ${ANDROID_SDK_ROOT}/build-tools/${ANDROID_BUILD_TOOLS}" >&2
+        echo "Run '$0 setup' or install build-tools;${ANDROID_BUILD_TOOLS} with sdkmanager." >&2
+        exit 1
+    }
+}
+
 validate_signing() {
     local signing_setting
     [[ -z "${JAMULUS_ANDROID_KEYSTORE:-}" ]] && echo "No Android keystore file specified" >&2
@@ -536,6 +554,7 @@ case "${1:-}" in
         ;;
     build)
         validate_build_mode
+        validate_android_toolchain
         validate_signing
         for build_mode in $BUILD_MODES; do
             build_app "$build_mode"
