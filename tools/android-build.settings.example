@@ -1,0 +1,30 @@
+# Copy to android-build.settings in the repository root (gitignored), or pass
+# --settings /path/to/file. Values here override existing environment values
+# and tools/android-build.sh defaults. Command-line options take precedence.
+#
+# JAMULUS_BUILD_VERSION is computed from Jamulus.pro (and git, for *dev versions)
+# unless you set it here.
+
+# JAVA_HOME=/usr/lib/jvm/java-11-openjdk-amd64
+# ANDROID_SDK_ROOT=/opt/android-sdk
+# ANDROID_NDK_ROOT=${ANDROID_SDK_ROOT}/ndk/21.0.6113669
+# ANDROID_BUILD_TOOLS_REVISION=30.0.0
+# QT_DIR=/opt/Qt
+# ANDROID_DEPLOYMENT_PLATFORM=android-34
+
+# Workflow default is both modes and all four ABIs. Narrow these for faster
+# local rebuilds:
+BUILD_MODES=release
+TARGET_ARCHS=arm64-v8a
+
+# Optional qmake CONFIG values, space-separated:
+# JAMULUS_ANDROID_QMAKE_CONFIG="serveronly disable_version_check"
+
+# Release signing (keep the keystore and passwords outside the repository):
+# JAMULUS_ANDROID_KEYSTORE=${HOME}/Jamulus/jamulus-dev.jks
+# JAMULUS_ANDROID_KEY_ALIAS=jamulus
+# JAMULUS_ANDROID_KEYSTORE_PASSWORD=devpassword
+# JAMULUS_ANDROID_KEY_PASSWORD=devpassword
+
+# Produce a Play Store AAB instead of an APK (requires signing above):
+# JAMULUS_ANDROID_PUBLISH=play-store
