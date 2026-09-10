@@ -436,9 +436,9 @@ keystore_type() {
     local detected_type
 
     if [[ -z "$storepass" ]]; then
-        detected_type="$(keytool -list -keystore "$keystore_file" 2> /dev/null | awk 'BEGIN{IGNORECASE=1} /^Keystore type:/ {print $3; exit 0} END {exit 1}')"
+        detected_type="$(keytool -list -keystore "$keystore_file" 2> /dev/null | awk 'BEGIN{IGNORECASE=1; status=1} /^Keystore type:/ {print $3; status=0} END {exit status}')"
     else
-        detected_type="$(keytool -list -keystore "$keystore_file" -storepass "$storepass" 2> /dev/null | awk 'BEGIN{IGNORECASE=1} /^Keystore type:/ {print $3; exit 0} END {exit 1}')"
+        detected_type="$(keytool -list -keystore "$keystore_file" -storepass "$storepass" 2> /dev/null | awk 'BEGIN{IGNORECASE=1; status=1} /^Keystore type:/ {print $3; status=0} END {exit status}')"
     fi
 
     [[ -n "$detected_type" ]] || return 1
@@ -471,7 +471,7 @@ build_app() {
         fi
     fi
     [[ "$PACKAGE_FORMAT" == aab ]] && package_args+=(--aab)
-    echo "Android deploy args: ${package_args[*]}"
+    echo "Android packaging: format=$([ "$PACKAGE_FORMAT" == aab ] && echo 'AAB' || echo 'APK') platform=${ANDROID_PLATFORM}"
 
     local qmake_config=()
     for config in $QMAKE_CONFIG; do
@@ -488,7 +488,11 @@ build_app() {
     "${ANDROID_NDK_MAKE}" INSTALL_ROOT="${build_dir}" install
     popd > /dev/null
 
-    env | grep ANDROID | sort
+    # Diagnostic environment - non-secret variables only
+    echo "Android environment:"
+    for var in ANDROID_PLATFORM ANDROID_SDK_ROOT ANDROID_NDK_ROOT TARGET_ARCHS JAVA_HOME QT_HOST_PATH ANDROID_BUILD_TOOLS; do
+        [[ -n "${!var:-}" ]] && echo "  ${var}=${!var}"
+    done
     "${QT_ANDROIDDEPLOYQT}" "${package_args[@]}"
 }
 
