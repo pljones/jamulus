@@ -268,13 +268,13 @@ the project signing and Play credentials are available. Ordinary
 `build_all_targets` runs build both Qt 5 and Qt 6 APKs.
 
 For direct `android.sh` use, export the paths and stream-specific values first.
-For example, a Qt 6 build uses:
+For example, a Qt 6 build could use:
 
 ```bash
-export JAVA_HOME=/usr/lib/jvm/java-17-openjdk-amd64
+export JAVA_HOME=/usr/lib/jvm/java-17-openjdk-amd64  ;# alternative JDK
 export PATH="$JAVA_HOME/bin:$PATH"
 export ANDROID_SDK_ROOT=/opt/android-sdk
-export ANDROID_NDK_ROOT="$ANDROID_SDK_ROOT/ndk/27.3.13750724"
+export ANDROID_NDK_ROOT="$ANDROID_SDK_ROOT/ndk/27.3.13750724"  ;# alternative NDK path
 export QT_DIR=/opt/Qt
 export QT_VERSION=6.10.2
 export ANDROID_DEPLOYMENT_PLATFORM=android-36

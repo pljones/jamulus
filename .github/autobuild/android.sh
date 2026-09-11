@@ -247,7 +247,13 @@ setup_android_ndk() {
     find "${ANDROID_NDK_ROOT}" -mindepth 1 -delete
     pushd "${ANDROID_NDK_ROOT}" > /dev/null
 
-    curl -s -o downloadfile.zip "https://dl.google.com/android/repository/android-ndk-${ANDROID_NDK_VERSION}-linux-x86_64.zip"
+    # Ugh... Should be optimised...
+    if [[ "${ANDROID_NDK_VERSION}" == "$( ( echo "r22b"; echo "${ANDROID_NDK_VERSION}" ) | sort | head -1)" ]]; then
+        suffix="-x86_64"
+    else
+        suffix=""
+    fi
+    curl -s -o downloadfile.zip "https://dl.google.com/android/repository/android-ndk-${ANDROID_NDK_VERSION}-linux${suffix}.zip"
     unzip -q downloadfile.zip -d ndk-tmpdir
     rm -f downloadfile.zip
 
