@@ -137,16 +137,19 @@ jobs:
           ANDROID_KEY_ALIAS:        ${{ secrets.ANDROID_KEY_ALIAS }}
           ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
           ANDROID_KEY_PASSWORD:     ${{ secrets.ANDROID_KEY_PASSWORD }}
-          GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
+          GCP_WORKLOAD_IDENTITY_PROVIDER: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          GCP_SERVICE_ACCOUNT_EMAIL:      ${{ vars.GCP_SERVICE_ACCOUNT_EMAIL }}
         run:                        |
           [[ -z "${ANDROID_KEYSTORE:-}" ]] && echo "Missing ANDROID_KEYSTORE secret. Android release signing will be disabled." >&2
           [[ -z "${ANDROID_KEY_ALIAS:-}" ]] && echo "Missing ANDROID_KEY_ALIAS secret. Android release signing will be disabled." >&2
           [[ -z "${ANDROID_KEYSTORE_PASSWORD:-}" ]] && echo "Missing ANDROID_KEYSTORE_PASSWORD secret. Android release signing will be disabled." >&2
           [[ -z "${ANDROID_KEY_PASSWORD:-}" ]] && echo "Missing ANDROID_KEY_PASSWORD secret. Android release signing will be disabled." >&2
-          [[ -z "${GOOGLE_SERVICE_ACCOUNT_JSON:-}" ]] && echo "Missing GOOGLE_SERVICE_ACCOUNT_JSON secret. Android Play Store upload will be disabled." >&2
+          [[ -z "${GCP_WORKLOAD_IDENTITY_PROVIDER:-}" ]] && echo "Missing GCP_WORKLOAD_IDENTITY_PROVIDER variable. Android Play Store upload will be disabled." >&2
+          [[ -z "${GCP_SERVICE_ACCOUNT_EMAIL:-}" ]] && echo "Missing GCP_SERVICE_ACCOUNT_EMAIL variable. Android Play Store upload will be disabled." >&2
           if [[ -n "${ANDROID_KEYSTORE:-}" && -n "${ANDROID_KEY_ALIAS:-}" && \
                 -n "${ANDROID_KEYSTORE_PASSWORD:-}" && -n "${ANDROID_KEY_PASSWORD:-}" && \
-                -n "${GOOGLE_SERVICE_ACCOUNT_JSON:-}" ]]; then
+                -n "${GCP_WORKLOAD_IDENTITY_PROVIDER:-}" && \
+                -n "${GCP_SERVICE_ACCOUNT_EMAIL:-}" ]]; then
             echo 'ready=true' >> "$GITHUB_OUTPUT"
           else
             echo 'ready=false' >> "$GITHUB_OUTPUT"
@@ -563,6 +566,7 @@ jobs:
     runs-on:                        ubuntu-22.04
     permissions:
       contents:                     read
+      id-token:                     write
     steps:
       - name:                       Checkout code
         uses:                       actions/checkout@v7
@@ -582,7 +586,7 @@ jobs:
         uses:                       google-github-actions/auth@v2
         with:
           workload_identity_provider: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}
-          service_account_email:      ${{ vars.GCP_SERVICE_ACCOUNT_EMAIL }}
+          service_account:            ${{ vars.GCP_SERVICE_ACCOUNT_EMAIL }}
 
       - name:                       Upload Android release bundle to Google Play
         # internalsharing hits the real Play Developer API (validating credentials,
@@ -592,7 +596,7 @@ jobs:
         uses:                       r0adkll/upload-google-play@eb49699984a39f23558439581660aa6f088acfd6
         with:
           releaseFiles:             ${{ steps.prepare_bundle.outputs.release_file }}
-          serviceAccountJson:       ${{ steps.auth.outputs.credentials_file_path }}
+          serviceAccountJson:       ${{ steps.gcloud-auth.outputs.credentials_file_path }}
           packageName:              app.jamulus.jamulus
           releaseName:              ${{ needs.create_release.outputs.build_version }}
           tracks:                   ${{ github.event_name == 'workflow_dispatch' && inputs.android_play_store_real_publish && 'beta' || 'internalsharing' }}
@@ -600,8 +604,8 @@ jobs:
 
       # internalsharing tracks only produce download URLs; other tracks (beta/production) don't set this output
       - name:                       Log internal sharing download URL
-        if:                         steps.upload.outputs.INTERNAL_SHARING_DOWNLOAD_URLS != ''
-        run:                        echo "Internal sharing download URL(s), add to release notes if desired -> ${{ steps.upload.outputs.INTERNAL_SHARING_DOWNLOAD_URLS }}"
+        if:                         steps.upload.outputs.internalSharingDownloadUrl != ''
+        run:                        echo "Internal sharing download URL, add to release notes if desired -> ${{ steps.upload.outputs.internalSharingDownloadUrl }}"
 
   create_deb_repo:
     name:                           Create files for .deb repository (if requested)
