@@ -88,7 +88,15 @@ apply_local_defaults() {
     # paths after android.sh setup.
     : "${JAVA_HOME:=/usr/lib/jvm/java-${ANDROID_JAVA_VERSION:-11}-openjdk-amd64}"
     : "${ANDROID_SDK_ROOT:=/opt/android-sdk}"
-    : "${ANDROID_NDK_ROOT:=${ANDROID_SDK_ROOT}/ndk/21.0.6113669}"
+    # NDK directory naming follows the numeric version per stream (see COMPILING.md).
+    case "${JAMULUS_ANDROID_STREAM}" in
+        play-store)
+            : "${ANDROID_NDK_ROOT:=${ANDROID_SDK_ROOT}/ndk/27.3.13750724}"
+            ;;
+        *)
+            : "${ANDROID_NDK_ROOT:=${ANDROID_SDK_ROOT}/ndk/21.0.6113669}"
+            ;;
+    esac
     : "${ANDROID_BUILD_TOOLS:=}"
     : "${QT_SELECT:=${QT_VERSION}-android}"
     # android.sh derives QT_ANDROID_DIR itself as "${QT_DIR}/${QT_VERSION}/android"
@@ -322,9 +330,11 @@ JAMULUS_ANDROID_STREAM="${OPTION_STREAM:-${JAMULUS_ANDROID_STREAM:-legacy}}"
 ANDROID_DEPENDENCIES="${PROJECT_DIR}/.github/autobuild/android-dependencies_${JAMULUS_ANDROID_STREAM}"
 ANDROID_DEPENDENCIES+=".sh"
 EXPLICIT_ANDROID_BUILD_TOOLS="${ANDROID_BUILD_TOOLS:-}"
+EXPLICIT_QT_VERSION="${QT_VERSION:-}"
 # shellcheck disable=SC1090
 source "$ANDROID_DEPENDENCIES"
 [[ -n "$EXPLICIT_ANDROID_BUILD_TOOLS" ]] && ANDROID_BUILD_TOOLS="$EXPLICIT_ANDROID_BUILD_TOOLS"
+[[ -n "$EXPLICIT_QT_VERSION" ]] && QT_VERSION="$EXPLICIT_QT_VERSION"
 load_settings_file "$(resolve_settings_file "$SETTINGS_FILE")"
 [[ -n "$OPTION_BUILD_MODES" ]] && BUILD_MODES="$OPTION_BUILD_MODES"
 [[ -n "$OPTION_TARGET_ARCHS" ]] && TARGET_ARCHS="$OPTION_TARGET_ARCHS"
