@@ -57,6 +57,7 @@ It analyzes Jamulus.pro and git push details (tag vs. branch, etc.) to decide
 import os
 import re
 import subprocess
+import sys
 
 REPO_PATH = os.path.join(os.path.dirname(__file__), '..', '..')
 
@@ -96,32 +97,54 @@ def set_github_variable(varname, varval):
     with open(output_file, "a") as ghout:
         ghout.write(f"{varname}={varval}\n")
 
-jamulus_pro_version = get_version_from_jamulus_pro()
-set_github_variable("JAMULUS_PRO_VERSION", jamulus_pro_version)
-build_type, build_version = get_build_version(jamulus_pro_version)
-print(f'building a version of type "{build_type}": {build_version}')
 
-full_ref = os.environ['GITHUB_REF']
-publish_to_release = bool(re.match(r'^refs/tags/r\d+_\d+_\d+\S*$', full_ref))
+def write_github_build_vars(jamulus_pro_version, build_type, build_version):
+    set_github_variable("JAMULUS_PRO_VERSION", jamulus_pro_version)
+    print(f'building a version of type "{build_type}": {build_version}')
 
-# BUILD_VERSION is required for all builds including branch pushes
-# and PRs:
-set_github_variable("BUILD_VERSION", build_version)
+    full_ref = os.environ['GITHUB_REF']
+    is_stable_release = bool(re.match(r'^refs/tags/r\d+_\d+_\d+$', full_ref))
+    publish_to_release = bool(re.match(r'^refs/tags/r\d+_\d+_\d+\S*$', full_ref))
 
-# PUBLISH_TO_RELEASE is always required as the workflow decides about further
-# steps based on this. It will only be true for tag pushes with a tag
-# starting with "r".
-set_github_variable("PUBLISH_TO_RELEASE", str(publish_to_release).lower())
+    # BUILD_VERSION is required for all builds including branch pushes
+    # and PRs:
+    set_github_variable("BUILD_VERSION", build_version)
 
-if publish_to_release:
-    ref_list = full_ref.split("/", 2)
-    release_tag = ref_list[2]
-    release_title = f"Release {build_version}  ({release_tag})"
-    is_prerelease = not re.match(r'^r\d+_\d+_\d+$', release_tag)
-    if not is_prerelease and build_version != release_tag[1:].replace('_', '.'):
-        raise ValueError(f"non-pre-release tag {release_tag} doesn't match Jamulus.pro VERSION = {build_version}")
+    # PUBLISH_TO_RELEASE is always required as the workflow decides about further
+    # steps based on this. It is true for release tags starting with "r".
+    set_github_variable("PUBLISH_TO_RELEASE", str(publish_to_release).lower())
 
-    # Those variables are only used when a release is created at all:
-    set_github_variable("IS_PRERELEASE", str(is_prerelease).lower())
-    set_github_variable("RELEASE_TITLE", release_title)
-    set_github_variable("RELEASE_TAG", release_tag)
+    if publish_to_release:
+        ref_list = full_ref.split("/", 2)
+        release_tag = ref_list[2]
+        release_title = f"Release {build_version}  ({release_tag})"
+        if is_stable_release and build_version != release_tag[1:].replace('_', '.'):
+            raise ValueError(
+                f"non-pre-release tag {release_tag} doesn't match Jamulus.pro VERSION = "
+                f"{build_version}")
+
+        # Those variables are only used when a release is created at all:
+        set_github_variable("IS_PRERELEASE", str(not is_stable_release).lower())
+        set_github_variable("RELEASE_TITLE", release_title)
+        set_github_variable("RELEASE_TAG", release_tag)
+
+
+def main(argv=None):
+    if argv is None:
+        argv = sys.argv[1:]
+
+    jamulus_pro_version = get_version_from_jamulus_pro()
+    build_type, build_version = get_build_version(jamulus_pro_version)
+
+    if argv == ['--print-build-version']:
+        print(build_version)
+        return 0
+    if argv:
+        raise SystemExit(f"Unknown arguments: {' '.join(argv)}")
+
+    write_github_build_vars(jamulus_pro_version, build_type, build_version)
+    return 0
+
+
+if __name__ == '__main__':
+    sys.exit(main())
