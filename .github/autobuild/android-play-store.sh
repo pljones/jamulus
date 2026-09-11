@@ -30,10 +30,10 @@ set -euo pipefail
 INPUT_DIR="${1:-deploy}"
 OUTPUT_DIR="${2:-play-store}"
 
-mapfile -t AABS < <(find "$INPUT_DIR" -maxdepth 1 -type f -name '*.aab' -print)
+mapfile -t AABS < <(find "$INPUT_DIR" -maxdepth 1 -type f -name '*release*.aab' -print)
 
 if [[ ${#AABS[@]} -ne 1 ]]; then
-    printf 'Expected exactly one Android App Bundle in %s, found %s\n' \
+    printf 'Expected exactly one release Android App Bundle in %s, found %s\n' \
         "$INPUT_DIR" "${#AABS[@]}" >&2
     exit 1
 fi
