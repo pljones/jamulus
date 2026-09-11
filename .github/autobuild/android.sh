@@ -58,18 +58,18 @@ fi
 PROJECT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 readonly PROJECT_DIR
 
-readonly ANDROID_STREAM="${JAMULUS_ANDROID_STREAM:-legacy}"
+readonly ANDROID_STREAM="${JAMULUS_ANDROID_STREAM:-qt5}"
 readonly PUBLISH_MODE="${JAMULUS_ANDROID_PUBLISH:-}"
 case "$ANDROID_STREAM" in
-    legacy)
-        ANDROID_DEPENDENCIES="${PROJECT_DIR}/.github/autobuild/android-dependencies_legacy.sh"
-        DEFAULT_ARTIFACT_SUFFIX="_legacy"
+    qt5 | legacy)
+        ANDROID_DEPENDENCIES="${PROJECT_DIR}/.github/autobuild/android-dependencies_qt5.sh"
+        DEFAULT_ARTIFACT_SUFFIX="_qt5"
         DEFAULT_PACKAGE_FORMAT="apk"
         ;;
-    play-store)
-        ANDROID_DEPENDENCIES="${PROJECT_DIR}/.github/autobuild/android-dependencies_play-store.sh"
-        DEFAULT_ARTIFACT_SUFFIX=""
-        DEFAULT_PACKAGE_FORMAT="aab"
+    qt6 | play-store)
+        ANDROID_DEPENDENCIES="${PROJECT_DIR}/.github/autobuild/android-dependencies_qt6.sh"
+        DEFAULT_ARTIFACT_SUFFIX="_qt6"
+        DEFAULT_PACKAGE_FORMAT="apk"
         ;;
     *)
         echo "Unsupported Android build stream: $ANDROID_STREAM" >&2
@@ -339,6 +339,8 @@ validate_build_mode() {
         echo "Unsupported Android publication mode: $PUBLISH_MODE" >&2
         exit 1
     }
+    # Play Store preparation selects the artifact compiled with the release
+    # configuration. Signing is decided independently from the supplied keystore.
     [[ "$PUBLISH_MODE" == "" || " $BUILD_MODES " == *" release "* ]] || {
         echo "Play Store publication requires a release build" >&2
         exit 1
@@ -347,11 +349,6 @@ validate_build_mode() {
         echo "Unsupported Android package format: $PACKAGE_FORMAT" >&2
         exit 1
     }
-    if [[ "$PUBLISH_MODE" == play-store && -z "${JAMULUS_ANDROID_KEYSTORE:-}" &&
-        -z "${JAMULUS_ANDROID_KEYSTORE_BASE64:-}" ]]; then
-        echo "Play Store publication requires an Android keystore" >&2
-        exit 1
-    fi
 }
 
 validate_android_toolchain() {
@@ -476,6 +473,8 @@ build_app() {
     local package_args=(--input "${build_dir}/android-Jamulus-deployment-settings.json"
         --output "${build_dir}" --android-platform "${ANDROID_PLATFORM}" --jdk "${JAVA_HOME}")
     if [[ -n "${ANDROID_KEYSTORE_FILE:-}" ]]; then
+        # androiddeployqt --release selects signed-release packaging. It is
+        # independent from qmake's debug/release compilation configuration.
         package_args+=(--release)
         local detected_keystore_type
         detected_keystore_type="$(keystore_type "${ANDROID_KEYSTORE_FILE}" "${JAMULUS_ANDROID_KEYSTORE_PASSWORD}")" || detected_keystore_type="unknown"

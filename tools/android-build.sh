@@ -88,9 +88,9 @@ apply_local_defaults() {
     # paths after android.sh setup.
     : "${JAVA_HOME:=/usr/lib/jvm/java-${ANDROID_JAVA_VERSION:-11}-openjdk-amd64}"
     : "${ANDROID_SDK_ROOT:=/opt/android-sdk}"
-    # NDK directory naming follows the numeric version per stream (see COMPILING.md).
+    # NDK directory naming follows the numeric version per Qt profile (see COMPILING.md).
     case "${JAMULUS_ANDROID_STREAM}" in
-        play-store)
+        qt6 | play-store)
             : "${ANDROID_NDK_ROOT:=${ANDROID_SDK_ROOT}/ndk/27.3.13750724}"
             ;;
         *)
@@ -212,7 +212,19 @@ resolve_settings_file() {
         printf '%s' "$JAMULUS_ANDROID_SETTINGS"
         return
     fi
-    local default_settings_file="${PROJECT_DIR}/android-build_${JAMULUS_ANDROID_STREAM}.settings"
+    local default_settings_file="${PROJECT_DIR}/android-build_${ANDROID_PROFILE}.settings"
+    if [[ -f "$default_settings_file" ]]; then
+        printf '%s' "$default_settings_file"
+        return
+    fi
+    case "$ANDROID_PROFILE" in
+        qt5)
+            default_settings_file="${PROJECT_DIR}/android-build_legacy.settings"
+            ;;
+        qt6)
+            default_settings_file="${PROJECT_DIR}/android-build_play-store.settings"
+            ;;
+    esac
     if [[ -f "$default_settings_file" ]]; then
         printf '%s' "$default_settings_file"
     fi
@@ -246,15 +258,15 @@ Stages:
 
 Options:
     -h, --help             Show this help
-    --settings FILE        Override file (default: android-build_STREAM.settings if present)
-    --stream STREAM        Select legacy or play-store settings (default: legacy)
+    --settings FILE        Override file (default: android-build_qtVERSION.settings if present)
+    --stream STREAM        Select qt5 or qt6 settings (default: qt5)
     --log FILE             Also write combined stdout/stderr to FILE
     --print-env            Print the resolved environment and exit
     --build-modes "MODES"  Override BUILD_MODES (default: "debug release")
     --archs "ARCHS"        Override TARGET_ARCHS (default: "armeabi-v7a arm64-v8a x86 x86_64")
 
 Precedence: command-line options > settings file > existing environment > documented local defaults.
-See tools/android-build_legacy.settings.example and tools/android-build_play-store.settings.example.
+See tools/android-build_qt5.settings.example and tools/android-build_qt6.settings.example.
 EOF
 }
 
@@ -324,10 +336,21 @@ cd "$PROJECT_DIR"
 [[ -x "$ANDROID_PLAY_STORE_SH" || -f "$ANDROID_PLAY_STORE_SH" ]] ||
     error "cannot find $ANDROID_PLAY_STORE_SH"
 
-JAMULUS_ANDROID_STREAM="${OPTION_STREAM:-${JAMULUS_ANDROID_STREAM:-legacy}}"
-[[ "$JAMULUS_ANDROID_STREAM" == legacy || "$JAMULUS_ANDROID_STREAM" == play-store ]] ||
+JAMULUS_ANDROID_STREAM="${OPTION_STREAM:-${JAMULUS_ANDROID_STREAM:-qt5}}"
+case "$JAMULUS_ANDROID_STREAM" in
+    qt5 | legacy)
+        ANDROID_PROFILE=qt5
+        ;;
+    qt6 | play-store)
+        ANDROID_PROFILE=qt6
+        ;;
+    *)
+        error "unsupported Android build stream: $JAMULUS_ANDROID_STREAM"
+        ;;
+esac
+[[ -n "$ANDROID_PROFILE" ]] ||
     error "unsupported Android build stream: $JAMULUS_ANDROID_STREAM"
-ANDROID_DEPENDENCIES="${PROJECT_DIR}/.github/autobuild/android-dependencies_${JAMULUS_ANDROID_STREAM}"
+ANDROID_DEPENDENCIES="${PROJECT_DIR}/.github/autobuild/android-dependencies_${ANDROID_PROFILE}"
 ANDROID_DEPENDENCIES+=".sh"
 EXPLICIT_ANDROID_BUILD_TOOLS="${ANDROID_BUILD_TOOLS:-}"
 EXPLICIT_QT_VERSION="${QT_VERSION:-}"
@@ -341,6 +364,7 @@ load_settings_file "$(resolve_settings_file "$SETTINGS_FILE")"
 apply_local_defaults
 if has_stage play-store; then
     export JAMULUS_ANDROID_PUBLISH=play-store
+    export JAMULUS_ANDROID_PACKAGE_FORMAT=aab
 fi
 export_managed_env
 ensure_java_on_path

@@ -1,4 +1,4 @@
-# Copy to android-build_legacy.settings in the repository root (gitignored), or
+# Copy to android-build_qt5.settings in the repository root (gitignored), or
 # pass --settings /path/to/file. Values here override existing environment
 # values and tools/android-build.sh defaults. Command-line options take
 # precedence.
@@ -17,7 +17,7 @@ TARGET_ARCHS=arm64-v8a
 # Optional qmake CONFIG values, space-separated:
 # JAMULUS_ANDROID_QMAKE_CONFIG="serveronly disable_version_check"
 
-# Override the default `_legacy` artifact suffix if necessary:
+# Override the default `_qt5` artifact suffix if necessary:
 # JAMULUS_ANDROID_ARTIFACT_SUFFIX=_custom
 
 # Optional side-load release signing (keep these outside the repository):
