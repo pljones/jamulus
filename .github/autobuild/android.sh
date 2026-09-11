@@ -565,6 +565,7 @@ distclean_android() {
     for generated_path in \
         "$PROJECT_DIR/debug" "$PROJECT_DIR"/debug-* \
         "$PROJECT_DIR/release" "$PROJECT_DIR"/release-* \
+        "$PROJECT_DIR/build" "$PROJECT_DIR/play-store" \
         "$PROJECT_DIR/.qm"; do
         [[ -e "$generated_path" ]] && rm -rf -- "$generated_path"
     done
