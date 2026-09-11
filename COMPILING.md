@@ -196,6 +196,10 @@ Both streams support devices from Android 5.0/API 21. The Legacy APK is not
 for Google Play. The Play Store AAB targets API 36, as required for current
 Google Play submissions.
 
+Since Jamulus 4.0.0, the Android package identity has become `app.jamulus.jamulus`
+and applies to both legacy and Play Store streams.
+`com.github.jamulussoftware.jamulus` is no longer used.
+
 - Install the Qt, Android SDK, NDK, and JDK versions for the stream you want
   to build. The GitHub workflow installs them on its runner; developers install
   them with their normal system or Qt tooling. Qt 5 needs `qtbase`, `qttools`,
