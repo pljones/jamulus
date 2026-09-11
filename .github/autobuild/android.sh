@@ -176,12 +176,23 @@ setup_android_sdk() {
     sudo mkdir -p "${COMMANDLINETOOLS_DIR}"
     sudo chown -R "$(whoami)" "${ANDROID_SDK_ROOT}"
 
-    if [[ -d "${COMMANDLINETOOLS_DIR}" && -x "${ANDROID_SDKMANAGER[0]}" ]]; then
-        echo "Using SDK installation from previous run (actions/cache)"
+    # sdkmanager doesn't record which cmdline-tools build we downloaded, so track that
+    # ourselves; platforms/build-tools are already installed under a directory named
+    # after the exact requested version, so no extra marker is needed for those.
+    local cmdlinetools_version_marker="${COMMANDLINETOOLS_DIR}/.jamulus-cmdlinetools-version"
+
+    if [[ -d "${COMMANDLINETOOLS_DIR}" && -x "${ANDROID_SDKMANAGER[0]}" &&
+        -f "$cmdlinetools_version_marker" &&
+        "$(cat "$cmdlinetools_version_marker")" == "${COMMANDLINETOOLS_VERSION}" &&
+        -d "${ANDROID_SDK_ROOT}/platforms/${ANDROID_PLATFORM}" &&
+        -d "${ANDROID_SDK_ROOT}/build-tools/${ANDROID_BUILD_TOOLS}" ]]; then
+        echo "Using SDK installation (cmdline-tools: ${COMMANDLINETOOLS_VERSION}, platforms: ${ANDROID_PLATFORM}, build-tools: ${ANDROID_BUILD_TOOLS}) from previous run (actions/cache)"
         return
     fi
 
-    echo "Installing SDK"
+    echo "Installing SDK (cmdline-tools: ${COMMANDLINETOOLS_VERSION}, platforms: ${ANDROID_PLATFORM}, build-tools: ${ANDROID_BUILD_TOOLS})"
+    # Clear any mismatched-version leftovers so files from different cmdline-tools builds can't mix.
+    rm -rf "${COMMANDLINETOOLS_DIR:?}"/*
     pushd "${COMMANDLINETOOLS_DIR}" > /dev/null
 
     curl -s -o downloadfile.zip "https://dl.google.com/android/repository/commandlinetools-linux-${COMMANDLINETOOLS_VERSION}_latest.zip"
@@ -192,6 +203,7 @@ setup_android_sdk() {
     rm -rf sdk-tmpdir
 
     popd > /dev/null
+    echo "${COMMANDLINETOOLS_VERSION}" > "$cmdlinetools_version_marker"
 
     set +o pipefail
     yes | "${ANDROID_SDKMANAGER[@]}" --licenses
@@ -212,12 +224,19 @@ setup_android_ndk() {
     sudo mkdir -p "${ANDROID_NDK_ROOT}"
     sudo chown -R "$(whoami)" "${ANDROID_NDK_ROOT}"
 
-    if [[ -f "${ANDROID_NDK_ROOT}/source.properties" && -x "${ANDROID_NDK_MAKE}" ]]; then
-        echo "Using NDK installation from previous run (actions/cache)"
+    # The NDK is unpacked flat into ANDROID_NDK_ROOT, so its directory layout
+    # doesn't encode the version; track it ourselves to validate cache hits.
+    local ndk_version_marker="${ANDROID_NDK_ROOT}/.jamulus-ndk-version"
+
+    if [[ -f "${ANDROID_NDK_ROOT}/source.properties" && -x "${ANDROID_NDK_MAKE}" &&
+        -f "$ndk_version_marker" && "$(cat "$ndk_version_marker")" == "${ANDROID_NDK_VERSION}" ]]; then
+        echo "Using NDK ${ANDROID_NDK_VERSION} installation from previous run (actions/cache)"
         return
     fi
 
-    echo "Installing NDK"
+    echo "Installing NDK ${ANDROID_NDK_VERSION}"
+    # Remove any mismatched-version leftovers so files from different NDK releases can't mix.
+    find "${ANDROID_NDK_ROOT}" -mindepth 1 -delete
     pushd "${ANDROID_NDK_ROOT}" > /dev/null
 
     curl -s -o downloadfile.zip "https://dl.google.com/android/repository/android-ndk-${ANDROID_NDK_VERSION}-linux-x86_64.zip"
@@ -228,6 +247,7 @@ setup_android_ndk() {
     rm -rf ndk-tmpdir
 
     popd > /dev/null
+    echo "${ANDROID_NDK_VERSION}" > "$ndk_version_marker"
 }
 
 setup_qt() {
@@ -238,9 +258,12 @@ setup_qt() {
     sudo mkdir -p "${QT_DIR}"
     sudo chown -R "$(whoami)" "${QT_DIR}"
 
+    # QT_QMAKE/QT_ANDROIDDEPLOYQT/per-arch qmake paths are all under a
+    # ${QT_VERSION}-named directory, so their presence already confirms the
+    # expected Qt version (and, for Qt6, each requested target arch) is installed.
     if [[ -x "${QT_QMAKE}" && -x "${QT_ANDROIDDEPLOYQT}" ]]; then
         if [[ "${QT_VERSION}" =~ 5\..* ]]; then
-            echo "Using Qt installation from previous run (actions/cache)"
+            echo "Using Qt ${QT_VERSION} installation from previous run (actions/cache)"
             return
         fi
         for target_arch in $TARGET_ARCHS; do
@@ -248,10 +271,8 @@ setup_qt() {
             [[ -x "${QT_DIR}/${QT_VERSION}/${qt_arch}/bin/qmake" ]] || break
         done
         [[ -x "${QT_DIR}/${QT_VERSION}/${qt_arch}/bin/qmake" ]] || qt_arch=""
-        if [[ -z "$qt_arch" ]]; then
-            :
-        else
-            echo "Using Qt installation from previous run (actions/cache)"
+        if [[ -n "$qt_arch" ]]; then
+            echo "Using Qt ${QT_VERSION} installation from previous run (actions/cache)"
             return
         fi
     fi
