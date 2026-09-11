@@ -52,6 +52,7 @@ MANAGED_VARS=(
     JAMULUS_ANDROID_SDK_ROOT
     JAMULUS_ANDROID_NDK_ROOT
     JAMULUS_ANDROID_QMAKE_CONFIG
+    JAMULUS_ANDROID_MAKE_JOBS
     JAMULUS_ANDROID_STREAM
     JAMULUS_ANDROID_ARTIFACT_SUFFIX
     JAMULUS_ANDROID_PACKAGE_FORMAT
@@ -264,6 +265,7 @@ Options:
     --print-env            Print the resolved environment and exit
     --build-modes "MODES"  Override BUILD_MODES (default: "debug release")
     --archs "ARCHS"        Override TARGET_ARCHS (default: "armeabi-v7a arm64-v8a x86 x86_64")
+    --jobs JOBS             Limit parallel compiler jobs (default: nproc)
 
 Precedence: command-line options > settings file > existing environment > documented local defaults.
 See tools/android-build_qt5.settings.example and tools/android-build_qt6.settings.example.
@@ -276,6 +278,7 @@ PRINT_ENV=0
 STAGES=()
 OPTION_BUILD_MODES=""
 OPTION_TARGET_ARCHS=""
+OPTION_MAKE_JOBS=""
 OPTION_STREAM=""
 
 while [[ $# -gt 0 ]]; do
@@ -297,6 +300,12 @@ while [[ $# -gt 0 ]]; do
         --archs)
             [[ $# -ge 2 ]] || error "missing value for --archs"
             OPTION_TARGET_ARCHS="$2"
+            shift 2
+            ;;
+        --jobs)
+            [[ $# -ge 2 ]] || error "missing value for --jobs"
+            [[ "$2" =~ ^[1-9][0-9]*$ ]] || error "--jobs must be a positive integer"
+            OPTION_MAKE_JOBS="$2"
             shift 2
             ;;
         --stream)
@@ -361,6 +370,7 @@ source "$ANDROID_DEPENDENCIES"
 load_settings_file "$(resolve_settings_file "$SETTINGS_FILE")"
 [[ -n "$OPTION_BUILD_MODES" ]] && BUILD_MODES="$OPTION_BUILD_MODES"
 [[ -n "$OPTION_TARGET_ARCHS" ]] && TARGET_ARCHS="$OPTION_TARGET_ARCHS"
+[[ -n "$OPTION_MAKE_JOBS" ]] && export JAMULUS_ANDROID_MAKE_JOBS="$OPTION_MAKE_JOBS"
 apply_local_defaults
 if has_stage play-store; then
     export JAMULUS_ANDROID_PUBLISH=play-store

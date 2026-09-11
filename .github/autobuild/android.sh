@@ -141,8 +141,16 @@ readonly BUILD_ROOT="${JAMULUS_ANDROID_BUILD_DIR:-${PROJECT_DIR}/android-build}"
 readonly DEPLOY_DIR="${JAMULUS_ANDROID_DEPLOY_DIR:-${PROJECT_DIR}/deploy}"
 readonly BUILD_MODES="${BUILD_MODES:-debug release}"
 readonly QMAKE_CONFIG="${JAMULUS_ANDROID_QMAKE_CONFIG:-}"
+MAX_MAKE_JOBS="$(nproc)"
+readonly MAX_MAKE_JOBS
+readonly MAKE_JOBS="${JAMULUS_ANDROID_MAKE_JOBS:-${MAX_MAKE_JOBS}}"
 readonly ARTIFACT_SUFFIX="${JAMULUS_ANDROID_ARTIFACT_SUFFIX:-${DEFAULT_ARTIFACT_SUFFIX}}"
 readonly PACKAGE_FORMAT="${JAMULUS_ANDROID_PACKAGE_FORMAT:-${DEFAULT_PACKAGE_FORMAT}}"
+
+if [[ ! "$MAKE_JOBS" =~ ^[1-9][0-9]*$ ]] || (( MAKE_JOBS > MAX_MAKE_JOBS )); then
+    echo "JAMULUS_ANDROID_MAKE_JOBS must be a positive integer no greater than ${MAX_MAKE_JOBS}" >&2
+    exit 1
+fi
 
 # Only variables which are really needed by sub-commands are exported.
 # Definitions have to stay in a specific order due to dependencies.
@@ -513,7 +521,7 @@ build_app() {
     "${QT_QMAKE}" "${PROJECT_DIR}/Jamulus.pro" -spec android-clang \
         CONFIG+=android_single_config CONFIG+="${build_mode}" CONFIG-=debug_and_release \
         "${qmake_config[@]}"
-    "${ANDROID_NDK_MAKE}" -j "$(nproc)"
+    "${ANDROID_NDK_MAKE}" -j "$MAKE_JOBS"
     "${ANDROID_NDK_MAKE}" INSTALL_ROOT="${build_dir}" install
     popd > /dev/null
 
