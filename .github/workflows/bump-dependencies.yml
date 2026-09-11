@@ -90,7 +90,7 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -eu
-          files=( .github/autobuild/*-dependencies{,_legacy,_play-store,_qt[56]}.* )
+          files=( .github/autobuild/*-dependencies{,_qt[56]}.* )
           echo "files: (${files[@]})"
           upstream_version="$(${{ matrix.components.get_upstream_version }})"
           echo "upstream version: {${upstream_version}}"

@@ -184,17 +184,16 @@ If you want to build the installer, please run the `deploy_mac.sh` script: `./ma
 
 ## Android
 
-Jamulus has two Android build streams. They use different toolchains and
-produce different package formats:
+Jamulus has two Android Qt toolchain profiles. Both produce APKs by default;
+the explicit Google Play upload flow switches the Qt 6 build to an AAB:
 
-| Stream | Distribution | Qt | Java | NDK | Build Tools | Compile platform / target SDK |
-| ------ | ------------ | -- | ---- | --- | ----------- | ----------------------------- |
-| Legacy | Side-load APK only | 5.15.2 | 8 | r21d (21.0.6113669) | 30.0.2 | Android 11 / API 30 |
-| Play Store | Google Play AAB | 6.10.2 | 17 | r27d (27.3.13750724) | 36.0.0 | Android 16 / API 36 |
+| Profile | Normal package | Play Store package | Qt | Java | NDK | Build Tools | Compile platform / target SDK |
+| ------- | -------------- | ------------------ | -- | ---- | --- | ----------- | ----------------------------- |
+| Qt 5 | APK | Not supported | 5.15.2 | 8 | r21d (21.0.6113669) | 30.0.2 | Android 11 / API 30 |
+| Qt 6 | APK | AAB | 6.10.2 | 17 | r27d (27.3.13750724) | 36.0.0 | Android 16 / API 36 |
 
-Both streams support devices from Android 5.0/API 21. The Legacy APK is not
-for Google Play. The Play Store AAB targets API 36, as required for current
-Google Play submissions.
+Both profiles support devices from Android 5.0/API 21. Qt 6 AABs target API
+36, as required for current Google Play submissions.
 
 Since Jamulus 4.0.0, the Android package identity has become `app.jamulus.jamulus`
 and applies to both legacy and Play Store streams.
@@ -217,30 +216,36 @@ requested stream, loads optional machine-specific overrides, sets
 `JAMULUS_BUILD_VERSION` from `Jamulus.pro` (and the git hash for development
 versions), and passes the same environment to every `android.sh` stage.
 
-Create separate, ignored settings files for the two streams:
+Create separate, ignored settings files for the two Qt profiles:
 
 ```bash
-cp tools/android-build_legacy.settings.example android-build_legacy.settings
-cp tools/android-build_play-store.settings.example android-build_play-store.settings
+cp tools/android-build_qt5.settings.example android-build_qt5.settings
+cp tools/android-build_qt6.settings.example android-build_qt6.settings
 ```
 
-`--stream` overrides `JAMULUS_ANDROID_STREAM`, which defaults to `legacy`. The
-resolved `legacy` stream selects `android-build_legacy.settings`; the resolved
-`play-store` stream selects `android-build_play-store.settings`. Set
-machine-specific paths, ABI/mode subsets, and signing settings in the
+`--stream` overrides `JAMULUS_ANDROID_STREAM`, which defaults to `qt5`. The
+resolved `qt5` profile selects `android-build_qt5.settings`; the resolved `qt6`
+profile selects `android-build_qt6.settings`. Existing `legacy` and
+`play-store` names remain accepted aliases for their respective settings files.
+Set machine-specific paths, ABI/mode subsets, and signing settings in the
 appropriate file. Inspect the resolved environment with `--print-env`.
 
-Build the legacy APKs, which are suitable for temporary or release side-loading:
+Build Qt 5 APKs, which are suitable for temporary or release side-loading:
 
 ```bash
-tools/android-build.sh --stream legacy --log android-legacy.log
+tools/android-build.sh --stream qt5 --log android-qt5.log
 ```
 
-For a Play Store AAB, add the following settings to
-`android-build_play-store.settings`, using a retained production signing key:
+To build Qt 6 APKs, use:
 
 ```bash
-BUILD_MODES=release
+tools/android-build.sh --stream qt6 --log android-qt6.log
+```
+
+For the Qt 6 Play Store AAB, add the following signing settings to
+`android-build_qt6.settings`, using a retained production signing key:
+
+```bash
 JAMULUS_ANDROID_KEYSTORE=/path/to/jamulus-upload.jks
 JAMULUS_ANDROID_KEY_ALIAS=jamulus
 JAMULUS_ANDROID_KEYSTORE_PASSWORD='...'
@@ -250,18 +255,20 @@ JAMULUS_ANDROID_KEY_PASSWORD='...'
 Then build and prepare the AAB for upload:
 
 ```bash
-tools/android-build.sh --stream play-store --log android-play-store.log \
+tools/android-build.sh --stream qt6 --log android-play-store.log \
     build get-artifacts play-store
 ```
 
 The `play-store` stage selects `JAMULUS_ANDROID_PUBLISH=play-store` and copies
-the AAB from `deploy/` to `play-store/`; it does not upload it. This separate
-stage requires a release build and signing key. In GitHub Actions, the AAB is
-built only for all-target builds when the project signing credentials are
-available.
+the single release-compiled AAB from `deploy/` to `play-store/`; it does not
+sign or upload it. It requires that a release AAB was built, while the
+subsequent Play Store upload validates the bundle's signing. In GitHub Actions,
+the `android_play_store_upload` workflow input builds only the Qt 6 AAB when
+the project signing and Play credentials are available. Ordinary
+`build_all_targets` runs build both Qt 5 and Qt 6 APKs.
 
 For direct `android.sh` use, export the paths and stream-specific values first.
-For example, a Play Store build uses:
+For example, a Qt 6 build uses:
 
 ```bash
 export JAVA_HOME=/usr/lib/jvm/java-17-openjdk-amd64
@@ -271,7 +278,7 @@ export ANDROID_NDK_ROOT="$ANDROID_SDK_ROOT/ndk/27.3.13750724"
 export QT_DIR=/opt/Qt
 export QT_VERSION=6.10.2
 export ANDROID_DEPLOYMENT_PLATFORM=android-36
-export JAMULUS_ANDROID_STREAM=play-store
+export JAMULUS_ANDROID_STREAM=qt6
 export JAMULUS_BUILD_VERSION="$(python3 .github/autobuild/get_build_vars.py --print-build-version)"
 .github/autobuild/android.sh build
 .github/autobuild/android.sh get-artifacts
@@ -287,10 +294,12 @@ kit for the first `TARGET_ARCHS` value, such as
 ### Build options
 
 - The Android driver defaults to all four ABIs and both debug and release modes.
-    The Legacy stream produces APKs. The optional Play Store CI stream instead
-    builds a release AAB. Build outputs are written below
+    Both Qt profiles produce APKs by default. The Play Store deployment flow
+    selects the Qt 6 release-compiled AAB, but a debug AAB may also be built.
+    Build outputs are written below
     `android-build/debug/` and `android-build/release/`; running `get-artifacts`
-    moves them to `deploy/`. Legacy APK artifacts include the `_legacy` suffix.
+    moves them to `deploy/`. Qt 5 and Qt 6 artifacts use `_qt5` and `_qt6`
+    suffixes, respectively.
 - Remove all generated Android build and deployment outputs with:
 
     ```bash
@@ -299,8 +308,8 @@ kit for the first `TARGET_ARCHS` value, such as
 
     This removes `android-build/`, `deploy/`, and legacy qmake Android output
     directories, but leaves unrelated untracked files in the checkout alone.
-- Select build modes explicitly with `BUILD_MODES`, and select a subset of
-    architectures with `TARGET_ARCHS`:
+- To build only the release compilation variant, set `BUILD_MODES=release`.
+    Select a subset of architectures with `TARGET_ARCHS`:
 
     ```bash
     BUILD_MODES=release \
@@ -322,8 +331,9 @@ kit for the first `TARGET_ARCHS` value, such as
     version code for non-development versions. Development builds default to
     version code `1`. Set `JAMULUS_ANDROID_VERSION_CODE` when a build needs an
     explicit positive version code.
-- Android release packages must be signed. Without signing options,
-    `androiddeployqt` uses a debug key, which is suitable for temporary
+- A supplied keystore selects `androiddeployqt` signed-release packaging,
+    independently of the debug/release compilation mode. Without signing
+    options, `androiddeployqt` uses a debug key, which is suitable for temporary
     side-loading but not for a production update path. Keep retained keystores
     and passwords outside the repository. GitHub Actions receives the production
     key as the base64-encoded `ANDROID_KEYSTORE` secret, plus

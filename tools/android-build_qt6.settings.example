@@ -1,5 +1,5 @@
-# Copy to android-build_play-store.settings in the repository root (gitignored),
-# or pass --settings /path/to/file. Values here override existing environment
+# Copy to android-build_qt6.settings in the repository root (gitignored), or
+# pass --settings /path/to/file. Values here override existing environment
 # values and tools/android-build.sh defaults. Command-line options take
 # precedence.
 
@@ -10,13 +10,17 @@
 # QT_DIR=/opt/Qt
 # ANDROID_DEPLOYMENT_PLATFORM=android-36
 
-BUILD_MODES=release
+# Defaults to "debug release". Set BUILD_MODES=release to skip the debug APK.
+# BUILD_MODES=release
 TARGET_ARCHS=arm64-v8a
 
 # Optional qmake CONFIG values, space-separated:
 # JAMULUS_ANDROID_QMAKE_CONFIG="serveronly disable_version_check"
 
-# Required for production signing (keep these outside the repository):
+# To build an AAB outside the `play-store` stage:
+# JAMULUS_ANDROID_PACKAGE_FORMAT=aab
+
+# Optional release signing (keep these outside the repository):
 # JAMULUS_ANDROID_KEYSTORE=${HOME}/Jamulus/jamulus-upload.jks
 # JAMULUS_ANDROID_KEY_ALIAS=jamulus
 # JAMULUS_ANDROID_KEYSTORE_PASSWORD=production-password

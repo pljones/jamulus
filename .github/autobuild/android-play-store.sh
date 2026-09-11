@@ -23,7 +23,8 @@
 #
 ##############################################################################
 
-# Prepare the single Android App Bundle for the Google Play upload action.
+# Prepare the release-compiled Android App Bundle for the Google Play upload action.
+# Google Play verifies the bundle signature during the subsequent upload.
 
 set -euo pipefail
 
