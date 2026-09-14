@@ -588,7 +588,7 @@ distclean_android() {
         "$PROJECT_DIR/debug" "$PROJECT_DIR"/debug-* \
         "$PROJECT_DIR/release" "$PROJECT_DIR"/release-* \
         "$PROJECT_DIR/build" "$PROJECT_DIR/play-store" \
-        "$PROJECT_DIR/.qm"; do
+        "$PROJECT_DIR/qmake_qmake_qm_files.qrc" "$PROJECT_DIR/.qm"; do
         [[ -e "$generated_path" ]] && rm -rf -- "$generated_path"
     done
 }
