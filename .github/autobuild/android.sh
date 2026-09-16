@@ -486,12 +486,66 @@ keystore_type() {
     printf '%s' "$detected_type"
 }
 
+qmake5_qmake_make() {
+    local build_dir="$1"; shift
+    local qmake_config=("$@")
+
+    pushd "${build_dir}" > /dev/null
+    "${QT_QMAKE}" "${PROJECT_DIR}/Jamulus.pro" -spec android-clang \
+        "${qmake_config[@]}" \
+        ANDROID_ABIS="${TARGET_ARCHS// /,}"
+
+    "${ANDROID_NDK_MAKE}" -j "$MAKE_JOBS"
+    "${ANDROID_NDK_MAKE}" INSTALL_ROOT="${build_dir}" install
+    popd > /dev/null
+}
+
+qmake6_qmake_make() {
+    local build_dir="$1"; shift
+    local qmake_config=("$@")
+    local -a target_archs=($TARGET_ARCHS)
+
+    for target_arch in "${target_archs[@]}"; do
+        local qt_arch
+        qt_arch="$(qt_android_arch "$target_arch")"
+        local qmake6_qmake="${QT_DIR}/${QT_VERSION}/${qt_arch}/bin/qmake"
+        [[ -x "$qmake6_qmake" ]] || {
+            echo "Qt6 qmake not found for target arch $target_arch: $qmake6_qmake" >&2
+            exit 1
+        }
+
+        rm -rf "${build_dir}/${qt_arch}"
+        mkdir -p "${build_dir}/${qt_arch}"
+        pushd "${build_dir}/${qt_arch}" > /dev/null
+        "${qmake6_qmake}" "${PROJECT_DIR}/Jamulus.pro" -spec android-clang \
+            CONFIG+=android_single_config CONFIG+="${build_mode}" CONFIG-=debug_and_release \
+            ANDROID_ABIS="${target_arch}" \
+            "${QMAKE_CONFIG[@]}"
+        "${ANDROID_NDK_MAKE}" -j "$MAKE_JOBS"
+        "${ANDROID_NDK_MAKE}" INSTALL_ROOT="${build_dir}" install
+        popd > /dev/null
+    done
+}
+
 build_app() {
     local build_mode="$1"
     local build_dir="${BUILD_ROOT}/${build_mode}"
+    local qmake_config=()
+
+    for config in $QMAKE_CONFIG; do
+        qmake_config+=("CONFIG+=${config}")
+    done
+    qmake_config+=("CONFIG+=android_single_config" "CONFIG+=${build_mode}" "CONFIG-=debug_and_release")
+    echo "qmake config: ${qmake_config[*]}; android ABIs: ${TARGET_ARCHS}"
 
     rm -rf "${build_dir}"
     mkdir -p "${build_dir}"
+
+    if [[ "$QT_VERSION" =~ 5\..* ]]; then
+        qmake5_qmake_make "${build_dir}" "${qmake_config[@]}"
+    else
+        qmake6_qmake_make "${build_dir}" "${qmake_config[@]}"
+    fi
 
     local package_args=(--input "${build_dir}/android-Jamulus-deployment-settings.json"
         --output "${build_dir}" --android-platform "${ANDROID_PLATFORM}" --jdk "${JAVA_HOME}")
@@ -515,21 +569,6 @@ build_app() {
     fi
     [[ "$PACKAGE_FORMAT" == aab ]] && package_args+=(--aab)
     echo "Android packaging: format=$([ "$PACKAGE_FORMAT" == aab ] && echo 'AAB' || echo 'APK') platform=${ANDROID_PLATFORM}"
-
-    local qmake_config=()
-    for config in $QMAKE_CONFIG; do
-        qmake_config+=("CONFIG+=${config}")
-    done
-    qmake_config+=("ANDROID_ABIS=${TARGET_ARCHS}")
-    echo "qmake config: ${qmake_config[*]} ${build_mode}"
-
-    pushd "${build_dir}" > /dev/null
-    "${QT_QMAKE}" "${PROJECT_DIR}/Jamulus.pro" -spec android-clang \
-        CONFIG+=android_single_config CONFIG+="${build_mode}" CONFIG-=debug_and_release \
-        "${qmake_config[@]}"
-    "${ANDROID_NDK_MAKE}" -j "$MAKE_JOBS"
-    "${ANDROID_NDK_MAKE}" INSTALL_ROOT="${build_dir}" install
-    popd > /dev/null
 
     # Diagnostic environment - non-secret variables only
     echo "Android environment:"
