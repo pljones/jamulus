@@ -217,7 +217,7 @@ setup_android_sdk() {
 
     echo "Installing SDK (cmdline-tools: ${COMMANDLINETOOLS_VERSION}, platforms: ${ANDROID_PLATFORM}, build-tools: ${ANDROID_BUILD_TOOLS})"
     # Clear any mismatched-version leftovers so files from different cmdline-tools builds can't mix.
-    rm -rf "${COMMANDLINETOOLS_DIR:?}"/*
+    find "${COMMANDLINETOOLS_DIR:?}" -mindepth 1 -delete
     pushd "${COMMANDLINETOOLS_DIR}" > /dev/null
 
     curl -s -o downloadfile.zip "https://dl.google.com/android/repository/commandlinetools-linux-${COMMANDLINETOOLS_VERSION}_latest.zip"
@@ -261,7 +261,7 @@ setup_android_ndk() {
 
     echo "Installing NDK ${ANDROID_NDK_VERSION}"
     # Remove any mismatched-version leftovers so files from different NDK releases can't mix.
-    find "${ANDROID_NDK_ROOT}" -mindepth 1 -delete
+    find "${ANDROID_NDK_ROOT:?}" -mindepth 1 -delete
     pushd "${ANDROID_NDK_ROOT}" > /dev/null
 
     # Ugh... Should be optimised...
@@ -309,6 +309,8 @@ setup_qt() {
     fi
 
     echo "Installing Qt"
+    # Remove any mismatched-version leftovers so files from different NDK releases can't mix.
+    find "${QT_DIR:?}/${QT_VERSION}" -mindepth 1 -delete
 
     # Create and enter virtual environment
     python3 -m venv venv
