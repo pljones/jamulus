@@ -269,7 +269,12 @@ setup_android_ndk() {
     pushd "${ANDROID_NDK_ROOT}" > /dev/null
 
     # Ugh... Should be optimised...
-    if [[ "${ANDROID_NDK_VERSION}" == "$( ( echo "r22b"; echo "${ANDROID_NDK_VERSION}" ) | sort | head -1)" ]]; then
+    if [[ "${ANDROID_NDK_VERSION}" == "$(
+        {
+            echo "r22b"
+            echo "${ANDROID_NDK_VERSION}"
+        } | sort | head -1
+    )" ]]; then
         suffix="-x86_64"
     else
         suffix=""
