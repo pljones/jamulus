@@ -147,9 +147,18 @@ fi
 readonly QT_ANDROID_DIR
 readonly QT_ANDROIDDEPLOYQT
 
-export QT_SELECT="${QT_VERSION}-$(basename "${QT_ANDROID_DIR}")"
+export QT_SELECT
+QT_SELECT="${QT_VERSION}-$(basename "${QT_ANDROID_DIR}")"
 export QTTOOLDIR="${QT_ANDROID_DIR}/bin"
 export QTLIBDIR="${QT_ANDROID_DIR}/lib"
+
+# Only variables which are really needed by sub-commands are exported.
+# Definitions have to stay in a specific order due to dependencies.
+export PATH="${PATH}:${ANDROID_SDK_ROOT}/tools"
+export PATH="${PATH}:${ANDROID_SDK_ROOT}/platform-tools"
+export JAVA_HOME="${JAVA_HOME:-/usr/lib/jvm/java-${ANDROID_JAVA_VERSION:-8}-openjdk-amd64/}"
+
+env | grep -E '^(ANDROID_BUILD_TOOLS_REVISION|ANDROID_HOME|ANDROID_NDK|ANDROID_NDK_HOME|ANDROID_NDK_LATEST_HOME|ANDROID_NDK_ROOT|ANDROID_SDK_BUILD_TOOLS_REVISION|ANDROID_SDK_ROOT|DEBIAN_FRONTEND|JAMULUS_BUILD_VERSION|JAVA_HOME|PATH|QTLIBDIR|QT_SELECT|QTTOOLDIR)=' | sort
 
 readonly QT_QMAKE="${QT_ANDROID_DIR}/bin/qmake"
 
@@ -163,22 +172,16 @@ readonly MAKE_JOBS="${JAMULUS_ANDROID_MAKE_JOBS:-${MAX_MAKE_JOBS}}"
 readonly ARTIFACT_SUFFIX="${JAMULUS_ANDROID_ARTIFACT_SUFFIX:-${DEFAULT_ARTIFACT_SUFFIX}}"
 readonly PACKAGE_FORMAT="${JAMULUS_ANDROID_PACKAGE_FORMAT:-${DEFAULT_PACKAGE_FORMAT}}"
 
-if [[ ! "$MAKE_JOBS" =~ ^[1-9][0-9]*$ ]] || (( MAKE_JOBS > MAX_MAKE_JOBS )); then
+if [[ ! "$MAKE_JOBS" =~ ^[1-9][0-9]*$ ]] || ((MAKE_JOBS > MAX_MAKE_JOBS)); then
     echo "JAMULUS_ANDROID_MAKE_JOBS must be a positive integer no greater than ${MAX_MAKE_JOBS}" >&2
     exit 1
 fi
 
-# Only variables which are really needed by sub-commands are exported.
-# Definitions have to stay in a specific order due to dependencies.
-export PATH="${PATH}:${ANDROID_SDK_ROOT}/tools"
-export PATH="${PATH}:${ANDROID_SDK_ROOT}/platform-tools"
-export JAVA_HOME="${JAVA_HOME:-/usr/lib/jvm/java-${ANDROID_JAVA_VERSION:-8}-openjdk-amd64/}"
-
-export JAMULUS_ANDROID_KEYSTORE="${JAMULUS_ANDROID_KEYSTORE:-}"
-export JAMULUS_ANDROID_KEYSTORE_BASE64="${JAMULUS_ANDROID_KEYSTORE_BASE64:-}"
-export JAMULUS_ANDROID_KEY_ALIAS="${JAMULUS_ANDROID_KEY_ALIAS:-}"
-export JAMULUS_ANDROID_KEYSTORE_PASSWORD="${JAMULUS_ANDROID_KEYSTORE_PASSWORD:-}"
-export JAMULUS_ANDROID_KEY_PASSWORD="${JAMULUS_ANDROID_KEY_PASSWORD:-}"
+readonly JAMULUS_ANDROID_KEYSTORE="${JAMULUS_ANDROID_KEYSTORE:-}"
+readonly JAMULUS_ANDROID_KEYSTORE_BASE64="${JAMULUS_ANDROID_KEYSTORE_BASE64:-}"
+readonly JAMULUS_ANDROID_KEY_ALIAS="${JAMULUS_ANDROID_KEY_ALIAS:-}"
+readonly JAMULUS_ANDROID_KEYSTORE_PASSWORD="${JAMULUS_ANDROID_KEYSTORE_PASSWORD:-}"
+readonly JAMULUS_ANDROID_KEY_PASSWORD="${JAMULUS_ANDROID_KEY_PASSWORD:-}"
 
 readonly COMMANDLINETOOLS_DIR="${ANDROID_SDK_ROOT}"/cmdline-tools/latest
 readonly ANDROID_SDKMANAGER=("${COMMANDLINETOOLS_DIR}/bin/sdkmanager" "--sdk_root=${ANDROID_SDK_ROOT}")
@@ -460,13 +463,9 @@ prepare_keystore() {
             exit 1
         fi
         trap 'rm -f $ANDROID_KEYSTORE_FILE' EXIT
-        local umask_value
-        (
-            umask_value="$(umask)"
-            umask 077
-            printf '%s' "$JAMULUS_ANDROID_KEYSTORE_BASE64" | base64 --decode > $ANDROID_KEYSTORE_FILE
-            umask "$umask_value"
-        )
+        touch "$ANDROID_KEYSTORE_FILE"
+        chmod 600 "$ANDROID_KEYSTORE_FILE"
+        printf '%s' "$JAMULUS_ANDROID_KEYSTORE_BASE64" | base64 --decode >> $ANDROID_KEYSTORE_FILE
     fi
 }
 
@@ -509,26 +508,41 @@ keystore_type() {
 }
 
 qmake5_qmake_make() {
-    local build_dir="$1"; shift
+    local build_dir="$1"
+    shift
+    local -n _p="$1"
+    shift
     local qmake_config=("$@")
+    local -a package_args=("${_p[@]}")
 
     pushd "${build_dir}" > /dev/null
-    "${QT_QMAKE}" "${PROJECT_DIR}/Jamulus.pro" -spec android-clang \
-        "${qmake_config[@]}" \
-        ANDROID_ABIS="${TARGET_ARCHS// /,}"
+    "${QT_QMAKE}" "${PROJECT_DIR}/Jamulus.pro" -spec android-clang "${qmake_config[@]}" ANDROID_ABIS="${TARGET_ARCHS// /,}"
 
     "${ANDROID_NDK_MAKE}" -j "$MAKE_JOBS"
     "${ANDROID_NDK_MAKE}" INSTALL_ROOT="${build_dir}" install
+
+    set -x
+    "${QT_ANDROIDDEPLOYQT}" --verbose --input android-Jamulus-deployment-settings.json --output "${build_dir}" "${package_args[@]}"
+    set +x
     popd > /dev/null
 }
 
 qmake6_qmake_make() {
-    local build_dir="$1"; shift
+    local build_dir="$1"
+    shift
+    local -n _p="$1"
+    shift
     local qmake_config=("$@")
+    local -a package_args=("${_p[@]}")
+
     local -a target_archs
     read -r -a target_archs <<< "${TARGET_ARCHS}"
 
-    for target_arch in "${target_archs[@]}"; do
+    # explicitly allow this to persist out of the loop.
+    local i=0
+    while ((i < ${#target_archs[@]})); do
+        local target_arch="${target_archs[$i]}"
+        ((i += 1))
         local qt_arch
         qt_arch="$(qt_android_arch "$target_arch")"
         local qmake6_qmake="${QT_DIR}/${QT_VERSION}/${qt_arch}/bin/qmake"
@@ -537,16 +551,31 @@ qmake6_qmake_make() {
             exit 1
         }
 
-        find "${build_dir:?}/${qt_arch}" -mindepth 1 -delete
         mkdir -p "${build_dir}/${qt_arch}"
+        find "${build_dir:?}/${qt_arch}" -mindepth 1 -delete
         pushd "${build_dir}/${qt_arch}" > /dev/null
-        "${qmake6_qmake}" "${PROJECT_DIR}/Jamulus.pro" -spec android-clang \
-            CONFIG+=android_single_config CONFIG+="${build_mode}" CONFIG-=debug_and_release \
-            ANDROID_ABIS="${target_arch}" \
-            "${QMAKE_CONFIG[@]}"
+
+        "${qmake6_qmake}" "${PROJECT_DIR}/Jamulus.pro" -spec android-clang "${qmake_config[@]}" ANDROID_ABIS="${target_arch}"
         "${ANDROID_NDK_MAKE}" -j "$MAKE_JOBS"
         "${ANDROID_NDK_MAKE}" INSTALL_ROOT="${build_dir}" install
+
+        set -x
+        if ((i < ${#target_archs[@]})); then
+            # For all but the last target arch, we need to generate an intermediate deployment settings file for the next target arch.
+            "${QT_ANDROIDDEPLOYQT}" --verbose --input android-Jamulus-deployment-settings.json --output "${build_dir}" --aux-mode
+        else
+            # For the last arch, we need to generate the final deployment settings file and package the app.
+            local qtTargetAbiList
+            qtTargetAbiList="$(
+                IFS=,
+                echo "${target_archs[*]}"
+            )"
+            [[ ${#target_archs[@]} -gt 1 ]] && echo 'qtTargetAbiList='"${qtTargetAbiList}" > "${build_dir}/gradle.properties"
+            "${QT_ANDROIDDEPLOYQT}" --verbose --input android-Jamulus-deployment-settings.json --output "${build_dir}" "${package_args[@]}"
+        fi
+        set +x
         popd > /dev/null
+
     done
 }
 
@@ -561,28 +590,21 @@ build_app() {
     qmake_config+=("CONFIG+=android_single_config" "CONFIG+=${build_mode}" "CONFIG-=debug_and_release")
     echo "qmake config: ${qmake_config[*]}; android ABIs: ${TARGET_ARCHS}"
 
-    rm -rf "${build_dir}"
-    mkdir -p "${build_dir}"
-
-    if [[ "$QT_VERSION" =~ 5\..* ]]; then
-        qmake5_qmake_make "${build_dir}" "${qmake_config[@]}"
-    else
-        qmake6_qmake_make "${build_dir}" "${qmake_config[@]}"
-    fi
-
-    local package_args=(--input "${build_dir}/android-Jamulus-deployment-settings.json"
-        --output "${build_dir}" --android-platform "${ANDROID_PLATFORM}" --jdk "${JAVA_HOME}")
+    local package_args=()
     if [[ -n "${ANDROID_KEYSTORE_FILE:-}" ]]; then
         # androiddeployqt --release selects signed-release packaging. It is
         # independent from qmake's debug/release compilation configuration.
         package_args+=(--release)
         local detected_keystore_type
         detected_keystore_type="$(keystore_type "${ANDROID_KEYSTORE_FILE}" "${JAMULUS_ANDROID_KEYSTORE_PASSWORD}")" || detected_keystore_type="unknown"
-        echo "Android release signing: keystore=${ANDROID_KEYSTORE_FILE} type=${detected_keystore_type} alias=${JAMULUS_ANDROID_KEY_ALIAS}"
-        package_args+=(--sign "${ANDROID_KEYSTORE_FILE}" "${JAMULUS_ANDROID_KEY_ALIAS}"
-            --storepass "${JAMULUS_ANDROID_KEYSTORE_PASSWORD}")
-        [[ -n "${JAMULUS_ANDROID_KEY_PASSWORD:-}" ]] &&
-            package_args+=(--keypass "${JAMULUS_ANDROID_KEY_PASSWORD}")
+
+        # To conceal the keystore information from the command line, use environment variables
+        export QT_ANDROID_KEYSTORE_PATH="${ANDROID_KEYSTORE_FILE}"
+        export QT_ANDROID_KEYSTORE_ALIAS="${JAMULUS_ANDROID_KEY_ALIAS}"
+        export QT_ANDROID_KEYSTORE_STORE_PASS="${JAMULUS_ANDROID_KEYSTORE_PASSWORD}"
+        export QT_ANDROID_KEYSTORE_KEY_PASS="${JAMULUS_ANDROID_KEY_PASSWORD:-}"
+
+        package_args+=(--sign)
         if [[ "$detected_keystore_type" == "PKCS12" ]]; then
             package_args+=(--storetype PKCS12)
             echo "Android release signing: forcing --storetype PKCS12 for PKCS12 keystore"
@@ -590,6 +612,7 @@ build_app() {
             echo "Android release signing: leaving keystore type unspecified for ${detected_keystore_type} keystore"
         fi
     fi
+
     [[ "$PACKAGE_FORMAT" == aab ]] && package_args+=(--aab)
     echo "Android packaging: format=$([ "$PACKAGE_FORMAT" == aab ] && echo 'AAB' || echo 'APK') platform=${ANDROID_PLATFORM}"
 
@@ -598,7 +621,15 @@ build_app() {
     for var in ANDROID_PLATFORM ANDROID_SDK_ROOT ANDROID_NDK_ROOT TARGET_ARCHS JAVA_HOME QT_HOST_PATH ANDROID_BUILD_TOOLS; do
         [[ -n "${!var:-}" ]] && echo "  ${var}=${!var}"
     done
-    "${QT_ANDROIDDEPLOYQT}" "${package_args[@]}"
+
+    rm -rf "${build_dir}"
+    mkdir -p "${build_dir}"
+
+    if [[ "$QT_VERSION" =~ 5\..* ]]; then
+        qmake5_qmake_make "${build_dir}" package_args "${qmake_config[@]}"
+    else
+        qmake6_qmake_make "${build_dir}" package_args "${qmake_config[@]}"
+    fi
 }
 
 pass_artifact_to_job() {
