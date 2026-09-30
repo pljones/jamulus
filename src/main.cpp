@@ -61,8 +61,10 @@
 #    include "testbench.h"
 #endif
 #include "util.h"
-#ifdef ANDROID
+#if defined( ANDROID ) && QT_VERSION < QT_VERSION_CHECK( 6, 0, 0 )
 #    include <QtAndroidExtras/QtAndroid>
+#elif defined( ANDROID ) && QT_VERSION >= QT_VERSION_CHECK( 6, 5, 0 )
+#    include <QPermissions>
 #endif
 #if defined( Q_OS_MACOS )
 #    include "mac/activity.h"
@@ -889,8 +891,12 @@ int main ( int argc, char** argv )
 #    endif
 #endif
 
-#ifdef ANDROID
-    // special Android coded needed for record audio permission handling
+#if defined( ANDROID ) && QT_VERSION >= QT_VERSION_CHECK( 6, 5, 0 )
+    bool bMicrophonePermissionGranted = true;
+#endif
+
+#if defined( ANDROID ) && QT_VERSION < QT_VERSION_CHECK( 6, 0, 0 )
+    // Qt 5 requests this permission synchronously before client construction.
     auto result = QtAndroid::checkPermission ( QString ( "android.permission.RECORD_AUDIO" ) );
 
     if ( result == QtAndroid::PermissionResult::Denied )
@@ -898,6 +904,26 @@ int main ( int argc, char** argv )
         QtAndroid::PermissionResultMap resultHash = QtAndroid::requestPermissionsSync ( QStringList ( { "android.permission.RECORD_AUDIO" } ) );
 
         if ( resultHash["android.permission.RECORD_AUDIO"] == QtAndroid::PermissionResult::Denied )
+        {
+            return 0;
+        }
+    }
+#elif defined( ANDROID ) && QT_VERSION >= QT_VERSION_CHECK( 6, 5, 0 )
+    QMicrophonePermission microphonePermission;
+    const Qt::PermissionStatus microphonePermissionStatus = pApp->checkPermission ( microphonePermission );
+    if ( microphonePermissionStatus == Qt::PermissionStatus::Denied )
+    {
+        return 0;
+    }
+    if ( microphonePermissionStatus == Qt::PermissionStatus::Undetermined )
+    {
+        bMicrophonePermissionGranted = false;
+        pApp->requestPermission ( microphonePermission, pApp, [&bMicrophonePermissionGranted, pApp] ( const QPermission& permission ) {
+            bMicrophonePermissionGranted = permission.status() == Qt::PermissionStatus::Granted;
+            pApp->quit();
+        } );
+        pApp->exec();
+        if ( !bMicrophonePermissionGranted )
         {
             return 0;
         }
