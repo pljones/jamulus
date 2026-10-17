@@ -62,4 +62,6 @@ jamulus_plugin_import.cpp
 .github/instructions/awesome-copilot-instructions
 *.jks
 **/*.log
+play-store/
+Copilot-Processing.md
 android-build_*.settings

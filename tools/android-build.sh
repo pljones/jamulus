@@ -33,6 +33,8 @@ readonly SCRIPT_NAME
 PROJECT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 readonly PROJECT_DIR
 readonly ANDROID_SH="${PROJECT_DIR}/.github/autobuild/android.sh"
+readonly ANDROID_PLAY_STORE_SH="${PROJECT_DIR}/.github/autobuild/android-play-store.sh"
+readonly GET_BUILD_VARS="${PROJECT_DIR}/.github/autobuild/get_build_vars.py"
 
 MANAGED_VARS=(
     JAVA_HOME
@@ -42,13 +44,23 @@ MANAGED_VARS=(
     ANDROID_PLATFORM
     QT_SELECT
     QT_DIR
+    QT_BASEDIR
     QT_VERSION
     JAMULUS_BUILD_VERSION
     BUILD_MODES
     TARGET_ARCHS
     JAMULUS_ANDROID_QMAKE_CONFIG
     JAMULUS_ANDROID_MAKE_JOBS
+    JAMULUS_ANDROID_STREAM
     JAMULUS_ANDROID_ARTIFACT_SUFFIX
+    JAMULUS_ANDROID_PACKAGE_FORMAT
+    JAMULUS_ANDROID_PUBLISH
+    JAMULUS_ANDROID_KEYSTORE
+    JAMULUS_ANDROID_KEYSTORE_BASE64
+    JAMULUS_ANDROID_KEY_ALIAS
+    JAMULUS_ANDROID_KEYSTORE_PASSWORD
+    JAMULUS_ANDROID_KEY_PASSWORD
+    JAMULUS_ANDROID_DEBUG_KEYSTORE
     JAMULUS_ANDROID_VERSION_CODE
     JAMULUS_ANDROID_BUILD_DIR
     JAMULUS_ANDROID_DEPLOY_DIR
@@ -59,14 +71,32 @@ error() {
     exit 1
 }
 
+is_secret_var() {
+    case "$1" in
+        *PASSWORD* | *KEYSTORE_BASE64*)
+            return 0
+            ;;
+        *)
+            return 1
+            ;;
+    esac
+}
+
 apply_local_defaults() {
     # Local developer layout from COMPILING.md. CI uses different /opt/android
     # paths after android.sh setup.
     : "${JAVA_HOME:=/usr/lib/jvm/java-${ANDROID_JAVA_VERSION:-11}-openjdk-amd64}"
     : "${ANDROID_SDK_ROOT:=/opt/android-sdk}"
-    : "${ANDROID_NDK_ROOT:=${ANDROID_SDK_ROOT}/ndk/21.0.6113669}"
+    case "$ANDROID_PROFILE" in
+        qt6)
+            : "${ANDROID_NDK_ROOT:=${ANDROID_SDK_ROOT}/ndk/27.3.13750724}"
+            ;;
+        qt5)
+            : "${ANDROID_NDK_ROOT:=${ANDROID_SDK_ROOT}/ndk/21.0.6113669}"
+            ;;
+    esac
     : "${ANDROID_BUILD_TOOLS:=}"
-    export QT_SELECT="${QT_VERSION}-android"
+    : "${QT_SELECT:=${QT_VERSION}-android}"
     # android.sh derives QT_ANDROID_DIR itself as "${QT_DIR}/${QT_VERSION}/android"
     : "${QT_DIR:=/opt/Qt}"
     : "${BUILD_MODES:=debug release}"
@@ -112,14 +142,9 @@ ensure_java_on_path() {
 
 ensure_build_version() {
     if [[ -z "${JAMULUS_BUILD_VERSION:-}" ]]; then
-        local jamulus_pro_version
-        jamulus_pro_version="$(sed -nE 's/^VERSION[[:space:]]*=[[:space:]]*([^[:space:]]+)[[:space:]]*$/\1/p' "${PROJECT_DIR}/Jamulus.pro")"
-        [[ -n "$jamulus_pro_version" ]] || error "cannot determine Jamulus.pro VERSION"
-        JAMULUS_BUILD_VERSION="$jamulus_pro_version"
-        if [[ "$jamulus_pro_version" == *dev* ]]; then
-            JAMULUS_BUILD_VERSION+="-$(git -C "$PROJECT_DIR" describe \
-                --match=xxxxxxxxxxxxxxxxxxxx --always --abbrev --dirty)"
-        fi
+        [[ -x "$GET_BUILD_VARS" || -f "$GET_BUILD_VARS" ]] ||
+            error "cannot find $GET_BUILD_VARS"
+        JAMULUS_BUILD_VERSION="$(python3 "$GET_BUILD_VARS" --print-build-version)"
         export JAMULUS_BUILD_VERSION
     fi
     [[ ${JAMULUS_BUILD_VERSION} =~ [0-9]+\.[0-9]+\.[0-9]+ ]] ||
@@ -133,7 +158,11 @@ print_resolved_env() {
         if [[ -z "${!var+x}" ]]; then
             continue
         fi
-        printf '  %s=%s\n' "$var" "${!var}"
+        if is_secret_var "$var"; then
+            printf '  %s=<set>\n' "$var"
+        else
+            printf '  %s=%s\n' "$var" "${!var}"
+        fi
     done
 }
 
@@ -158,6 +187,9 @@ run_stage() {
         setup | build | get-artifacts)
             run_logged "$ANDROID_SH" "$stage"
             ;;
+        play-store)
+            run_logged "$ANDROID_PLAY_STORE_SH"
+            ;;
         distclean)
             run_distclean
             ;;
@@ -165,6 +197,15 @@ run_stage() {
             error "unknown stage: $stage"
             ;;
     esac
+}
+
+has_stage() {
+    local requested_stage="$1"
+    local stage
+    for stage in "${STAGES[@]}"; do
+        [[ "$stage" == "$requested_stage" ]] && return 0
+    done
+    return 1
 }
 
 resolve_settings_file() {
@@ -177,11 +218,7 @@ resolve_settings_file() {
         printf '%s' "$JAMULUS_ANDROID_SETTINGS"
         return
     fi
-    local default_settings_file="${PROJECT_DIR}/android-build_qt5.settings"
-    if [[ -f "$default_settings_file" ]]; then
-        printf '%s' "$default_settings_file"
-        return
-    fi
+    local default_settings_file="${PROJECT_DIR}/android-build_${ANDROID_PROFILE}.settings"
     [[ -f "$default_settings_file" ]] && printf '%s' "$default_settings_file"
 }
 
@@ -199,12 +236,13 @@ Stages:
     distclean      make distclean (if a Makefile exists) and android.sh distclean
     build          Build selected debug/release packages
     get-artifacts  Rename packages into deploy/
+    play-store     Prepare the release AAB in play-store/ for store upload
     all            distclean, build, and get-artifacts (default)
 
 Options:
     -h, --help             Show this help
-    --settings FILE        Override file (default: android-build_qtVERSION.settings if present)
-    --stream STREAM        Select the Qt 5 build (default: qt5)
+    --settings FILE        Override file (default: matching Qt settings file if present)
+    --stream STREAM        Select Qt 5 or Qt 6 (default: qt5)
     --log FILE             Also write combined stdout/stderr to FILE
     --print-env            Print the resolved environment and exit
     --build-modes "MODES"  Override BUILD_MODES (default: "debug release")
@@ -212,7 +250,7 @@ Options:
     --jobs JOBS             Limit parallel compiler jobs (default: nproc)
 
 Precedence: command-line options > settings file > existing environment > documented local defaults.
-See tools/android-build_qt5.settings.example.
+See tools/android-build_qt5.settings.example and tools/android-build_qt6.settings.example.
 EOF
 }
 
@@ -270,7 +308,7 @@ while [[ $# -gt 0 ]]; do
             STAGES+=(distclean build get-artifacts)
             shift
             ;;
-        setup | distclean | build | get-artifacts)
+        setup | distclean | build | get-artifacts | play-store)
             STAGES+=("$1")
             shift
             ;;
@@ -288,9 +326,21 @@ cd "$PROJECT_DIR"
 [[ -x "$ANDROID_SH" || -f "$ANDROID_SH" ]] || error "cannot find $ANDROID_SH"
 
 JAMULUS_ANDROID_STREAM="${OPTION_STREAM:-${JAMULUS_ANDROID_STREAM:-qt5}}"
-[[ "$JAMULUS_ANDROID_STREAM" == qt5 ]] ||
-    error "unsupported Android build stream: $JAMULUS_ANDROID_STREAM"
-ANDROID_DEPENDENCIES="${PROJECT_DIR}/.github/autobuild/android-dependencies_qt5.sh"
+case "$JAMULUS_ANDROID_STREAM" in
+    qt5 | qt6)
+        ANDROID_PROFILE="$JAMULUS_ANDROID_STREAM"
+        ;;
+    *)
+        error "unsupported Android build stream: $JAMULUS_ANDROID_STREAM"
+        ;;
+esac
+ANDROID_DEPENDENCIES="${PROJECT_DIR}/.github/autobuild/android-dependencies_${ANDROID_PROFILE}.sh"
+if has_stage play-store; then
+    [[ "$ANDROID_PROFILE" == qt6 ]] ||
+        error "the play-store stage requires --stream qt6"
+    [[ -x "$ANDROID_PLAY_STORE_SH" || -f "$ANDROID_PLAY_STORE_SH" ]] ||
+        error "cannot find $ANDROID_PLAY_STORE_SH"
+fi
 EXPLICIT_ANDROID_BUILD_TOOLS="${ANDROID_BUILD_TOOLS:-}"
 EXPLICIT_QT_VERSION="${QT_VERSION:-}"
 # shellcheck disable=SC1090
@@ -302,6 +352,10 @@ load_settings_file "$(resolve_settings_file "$SETTINGS_FILE")"
 [[ -n "$OPTION_TARGET_ARCHS" ]] && TARGET_ARCHS="$OPTION_TARGET_ARCHS"
 [[ -n "$OPTION_MAKE_JOBS" ]] && export JAMULUS_ANDROID_MAKE_JOBS="$OPTION_MAKE_JOBS"
 apply_local_defaults
+if has_stage play-store; then
+    export JAMULUS_ANDROID_PUBLISH=play-store
+    export JAMULUS_ANDROID_PACKAGE_FORMAT=aab
+fi
 export_managed_env
 ensure_java_on_path
 ensure_build_version

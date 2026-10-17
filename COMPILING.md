@@ -188,37 +188,49 @@ If you want to build the installer, please run the `deploy_mac.sh` script: `./ma
 
 ## Android
 
-Jamulus's Android side-load build uses Qt 5 and produces an APK:
+Jamulus has two Android Qt toolchain profiles. Both produce APKs by default;
+the explicit Google Play upload flow switches the Qt 6 build to an AAB:
 
-| Qt | Package | Java | NDK | Build Tools | Compile platform / target SDK |
-| -- | ------- | ---- | --- | ----------- | ----------------------------- |
-| 5.15.2 | APK | 8 | r21d (21.0.6113669) | 30.0.2 | Android 11 / API 30 |
+| Profile | Normal package | Play Store package | Qt | Java | NDK | Build Tools | Compile platform / target SDK |
+| ------- | -------------- | ------------------ | -- | ---- | --- | ----------- | ----------------------------- |
+| Qt 5 | APK | Not supported | 5.15.2 | 8 | r21d (21.0.6113669) | 30.0.2 | Android 11 / API 30 |
+| Qt 6 | APK | AAB | 6.10.2 | 17 | r27d (27.3.13750724) | 36.0.0 | Android 16 / API 36 |
 
-The APK supports devices from Android 5.0/API 21.
+Both profiles support devices from Android 5.0/API 21. Qt 6 AABs target API
+36, as required for current Google Play submissions.
 
-- Install Qt 5.15.2 with `qtbase`, `qttools`, `qttranslations`,
-    `qtandroidextras`, and `qtmultimedia`, plus JDK 8, Android NDK r21d,
-    Android SDK Platform 30, and Build Tools 30.0.2. The GitHub workflow installs
-    these dependencies on its runner; local builds use the installed toolchain.
+Since Jamulus 4.0.0, the Android package identity has become `app.jamulus.jamulus` -
+`com.github.jamulussoftware.jamulus` is no longer used.
+
+- Install the Qt, Android SDK, NDK, and JDK versions for the stream you want
+  to build. The GitHub workflow installs them on its runner; developers install
+  them with their normal system or Qt tooling. Qt 5 needs `qtbase`, `qttools`,
+  `qttranslations`, `qtandroidextras`, and `qtmultimedia`. Qt 6 needs
+    `qtbase`, `qttools`, `qttranslations`, and the `qtmultimedia` module. Qt 6
+    installs one Android kit for each selected ABI plus a `gcc_64` host kit for
+    `androiddeployqt`.
 - Make sure the Jamulus submodules are present, notably oboe:
     `git submodule update --init --recursive`
 
 ### Local builds
 
 Use `tools/android-build.sh` for local builds. It selects the toolchain for the
-Qt 5 profile, loads optional machine-specific overrides, sets
+requested stream, loads optional machine-specific overrides, sets
 `JAMULUS_BUILD_VERSION` from `Jamulus.pro` (and the git hash for development
 versions), and passes the same environment to every `android.sh` stage.
 
-Create an ignored settings file for local toolchain overrides:
+Create separate, ignored settings files for the two Qt profiles:
 
 ```bash
 cp tools/android-build_qt5.settings.example android-build_qt5.settings
+cp tools/android-build_qt6.settings.example android-build_qt6.settings
 ```
 
-The Qt 5 wrapper loads `android-build_qt5.settings` by default. Set
-machine-specific toolchain paths and ABI/mode subsets there. Inspect the
-resolved environment with `--print-env`.
+`--stream` overrides `JAMULUS_ANDROID_STREAM`, which defaults to `qt5`. The
+`qt5` and `qt6` stream values select their matching dependency profile and
+`android-build_qt5.settings` or `android-build_qt6.settings` file.
+Set machine-specific paths, ABI/mode subsets, and signing settings in the
+appropriate file. Inspect the resolved environment with `--print-env`.
 
 Build Qt 5 APKs, which are suitable for temporary or release side-loading:
 
@@ -226,12 +238,70 @@ Build Qt 5 APKs, which are suitable for temporary or release side-loading:
 tools/android-build.sh --stream qt5 --log android-qt5.log
 ```
 
+To build Qt 6 APKs, use:
+
+```bash
+tools/android-build.sh --stream qt6 --log android-qt6.log
+```
+
+For the Qt 6 Play Store AAB, add the following signing settings to
+`android-build_qt6.settings`, using a retained production signing key:
+
+```bash
+JAMULUS_ANDROID_KEYSTORE=/path/to/jamulus-upload.jks
+JAMULUS_ANDROID_KEY_ALIAS=jamulus
+JAMULUS_ANDROID_KEYSTORE_PASSWORD='...'
+JAMULUS_ANDROID_KEY_PASSWORD='...'
+```
+
+Then build and prepare the AAB for upload:
+
+```bash
+tools/android-build.sh --stream qt6 --log android-play-store.log \
+    build get-artifacts play-store
+```
+
+The `play-store` stage selects `JAMULUS_ANDROID_PUBLISH=play-store` and copies
+the single release-compiled AAB from `deploy/` to `play-store/`; it does not
+sign or upload it. It requires that a release AAB was built, while the
+subsequent Play Store upload validates the bundle's signing. In GitHub Actions,
+the `android_play_store_upload` workflow input builds only the Qt 6 AAB when
+the project signing and Play credentials are available. Ordinary
+`build_all_targets` runs build both Qt 5 and Qt 6 APKs.
+
+For direct `android.sh` use, export the paths and stream-specific values first.
+For example, a Qt 6 build could use:
+
+```bash
+export JAVA_HOME=/usr/lib/jvm/java-17-openjdk-amd64  ;# alternative JDK
+export PATH="$JAVA_HOME/bin:$PATH"
+export ANDROID_SDK_ROOT=/opt/android-sdk
+export ANDROID_NDK_ROOT="$ANDROID_SDK_ROOT/ndk/27.3.13750724"  ;# alternative NDK path
+export QT_DIR=/opt/Qt
+export QT_VERSION=6.10.2
+export ANDROID_PLATFORM=android-36
+export JAMULUS_ANDROID_STREAM=qt6
+export JAMULUS_BUILD_VERSION="$(python3 .github/autobuild/get_build_vars.py --print-build-version)"
+.github/autobuild/android.sh build
+.github/autobuild/android.sh get-artifacts
+```
+
+`QT_DIR` and `ANDROID_PLATFORM` are optional when the tools are
+discoverable and the stream's default platform is installed. Qt 5 uses the
+unified `$QT_DIR/$QT_VERSION/android` kit. For Qt 6, `android.sh` selects the
+kit for the first `TARGET_ARCHS` value, such as
+`/opt/Qt/6.10.2/android_arm64_v8a`, and uses
+`/opt/Qt/6.10.2/gcc_64/bin/androiddeployqt` to package all selected ABIs.
+
 ### Build options
 
 - The Android driver defaults to all four ABIs and both debug and release modes.
+    Both Qt profiles produce APKs by default. The Play Store deployment flow
+    selects the Qt 6 release-compiled AAB, but a debug AAB may also be built.
     Build outputs are written below
     `android-build/debug/` and `android-build/release/`; running `get-artifacts`
-    moves them to `deploy/`. Artifacts use the `_qt5` suffix.
+    moves them to `deploy/`. Qt 5 and Qt 6 artifacts use `_qt5` and `_qt6`
+    suffixes, respectively.
 - Remove all generated Android build and deployment outputs with:
 
     ```bash
@@ -246,7 +316,7 @@ tools/android-build.sh --stream qt5 --log android-qt5.log
     ```bash
     BUILD_MODES=release \
     TARGET_ARCHS="arm64-v8a x86_64" \
-    tools/android-build.sh build get-artifacts
+    tools/android-build.sh build get-artifacts play-store
     ```
 
     Add qmake configuration values with `JAMULUS_ANDROID_QMAKE_CONFIG`:
@@ -256,13 +326,35 @@ tools/android-build.sh --stream qt5 --log android-qt5.log
     .github/autobuild/android.sh build
     ```
 
-    Set `ANDROID_NDK_ROOT` or `QT_DIR` to use different installed toolchains.
-    Set `ANDROID_PLATFORM` to select the Android SDK platform.
+    Set `ANDROID_NDK_ROOT`, `ANDROID_NDK_ROOT`, or `QT_DIR` to
+    use different installed toolchains. Set `ANDROID_PLATFORM` to
+    select the Android SDK platform.
 - Release builds use the normal positive Git revision count as their Android
     version code for non-development versions. Development builds default to
     version code `1`. Set `JAMULUS_ANDROID_VERSION_CODE` when a build needs an
     explicit positive version code.
-- An APK can be installed directly with `adb`.
+- A supplied keystore selects `androiddeployqt` signed-release packaging,
+    independently of the debug/release compilation mode. Without signing
+    options, `androiddeployqt` uses a debug key, which is suitable for temporary
+    side-loading but not for a production update path. Keep retained keystores
+    and passwords outside the repository. GitHub Actions receives the production
+    key as the base64-encoded `ANDROID_KEYSTORE` secret, plus
+    `ANDROID_KEY_ALIAS`, `ANDROID_KEYSTORE_PASSWORD`, and
+    `ANDROID_KEY_PASSWORD`.
+- Neither `tools/android-build.sh` nor `.github/autobuild/android.sh` uploads
+    anything to Google Play. The `publish_android_play_store` job in
+    [`.github/workflows/autobuild.yml`](.github/workflows/autobuild.yml) uploads
+    the signed AAB only when manually dispatched with
+    `android_play_store_upload` as an all-target publishable release. It needs
+    two repository variables:
+    - `GCP_WORKLOAD_IDENTITY_PROVIDER`: the project ID and pool / provider location details
+      (example: `projects/123456789123/locations/global/workloadIdentityPools/github-pool/providers/github`)
+    - `GCP_SERVICE_ACCOUNT_EMAIL`: the IAM admin service account email address
+      (example: `github-play-upload@project-c46758fa-1d47-4789-abe.iam.gserviceaccount.com`)
+    By default the job uses Internal App Sharing; `android_play_store_real_publish` uploads a beta draft.
+- An APK can be installed directly with `adb`. An AAB is intended for Google
+    Play or another bundle-aware service; use `bundletool` to turn an AAB into
+    installable APKs for side-load testing.
 
 ## Compile time arguments
 
