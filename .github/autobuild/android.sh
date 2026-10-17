@@ -61,12 +61,12 @@ readonly PROJECT_DIR
 readonly ANDROID_STREAM="${JAMULUS_ANDROID_STREAM:-qt5}"
 readonly PUBLISH_MODE="${JAMULUS_ANDROID_PUBLISH:-}"
 case "$ANDROID_STREAM" in
-    qt5 | legacy)
+    qt5)
         ANDROID_DEPENDENCIES="${PROJECT_DIR}/.github/autobuild/android-dependencies_qt5.sh"
         DEFAULT_ARTIFACT_SUFFIX="_qt5"
         DEFAULT_PACKAGE_FORMAT="apk"
         ;;
-    qt6 | play-store)
+    qt6)
         ANDROID_DEPENDENCIES="${PROJECT_DIR}/.github/autobuild/android-dependencies_qt6.sh"
         DEFAULT_ARTIFACT_SUFFIX="_qt6"
         DEFAULT_PACKAGE_FORMAT="apk"

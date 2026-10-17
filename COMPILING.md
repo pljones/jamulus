@@ -199,8 +199,7 @@ the explicit Google Play upload flow switches the Qt 6 build to an AAB:
 Both profiles support devices from Android 5.0/API 21. Qt 6 AABs target API
 36, as required for current Google Play submissions.
 
-Since Jamulus 4.0.0, the Android package identity has become `app.jamulus.jamulus`
-and applies to both legacy and Play Store streams.
+Since Jamulus 4.0.0, the Android package identity has become `app.jamulus.jamulus` -
 `com.github.jamulussoftware.jamulus` is no longer used.
 
 - Install the Qt, Android SDK, NDK, and JDK versions for the stream you want

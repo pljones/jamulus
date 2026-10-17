@@ -217,10 +217,10 @@ resolve_settings_file() {
     fi
     case "$ANDROID_PROFILE" in
         qt5)
-            default_settings_file="${PROJECT_DIR}/android-build_legacy.settings"
+            default_settings_file="${PROJECT_DIR}/android-build_qt5.settings"
             ;;
         qt6)
-            default_settings_file="${PROJECT_DIR}/android-build_play-store.settings"
+            default_settings_file="${PROJECT_DIR}/android-build_qt6.settings"
             ;;
     esac
     if [[ -f "$default_settings_file" ]]; then
@@ -344,10 +344,10 @@ cd "$PROJECT_DIR"
 
 JAMULUS_ANDROID_STREAM="${OPTION_STREAM:-${JAMULUS_ANDROID_STREAM:-qt5}}"
 case "$JAMULUS_ANDROID_STREAM" in
-    qt5 | legacy)
+    qt5)
         ANDROID_PROFILE=qt5
         ;;
-    qt6 | play-store)
+    qt6)
         ANDROID_PROFILE=qt6
         ;;
     *)
