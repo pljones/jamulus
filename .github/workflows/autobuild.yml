@@ -199,7 +199,7 @@ jobs:
             target_os:              android
             building_on_os:         ubuntu-22.04
             # override runner environment variables to avoid picking up any pre-installed Android SDK/NDK/Qt versions
-            base_command:           QT_DIR= ANDROID_NDK_ROOT= ANDROID_SDK_ROOT= JAMULUS_ANDROID_STREAM=qt5 ./.github/autobuild/android.sh
+            base_command:           JAVA_HOME= QT_DIR= ANDROID_NDK_ROOT= ANDROID_SDK_ROOT= JAMULUS_ANDROID_STREAM=qt5 ./.github/autobuild/android.sh
             run_codeql:             true
             is_main_build_target:   true
             dependency_cache_key:   qt5
@@ -209,7 +209,7 @@ jobs:
           - config_name:            Android Qt6 ABI APK ZIPs (experimental)
             target_os:              android
             building_on_os:         ubuntu-22.04
-            base_command:           QT_DIR= ANDROID_NDK_ROOT= ANDROID_SDK_ROOT= JAMULUS_ANDROID_STREAM=qt6 ./.github/autobuild/android.sh
+            base_command:           JAVA_HOME= QT_DIR= ANDROID_NDK_ROOT= ANDROID_SDK_ROOT= JAMULUS_ANDROID_STREAM=qt6 ./.github/autobuild/android.sh
             run_codeql:             false
             dependency_cache_key:   qt6
             checkout_fetch_depth:   '0'
