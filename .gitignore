@@ -63,3 +63,4 @@ jamulus_plugin_import.cpp
 *.jks
 **/*.log
 android-build_*.settings
+Copilot-Processing.md
