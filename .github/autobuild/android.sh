@@ -565,6 +565,13 @@ qmake5_qmake_make() {
     popd > /dev/null
 }
 
+android_abi_apk_name() {
+    local build_mode="$1"
+    local target_arch="$2"
+    printf 'jamulus_%s_android_%s%s_%s.apk' \
+        "$JAMULUS_BUILD_VERSION" "$build_mode" "$ARTIFACT_SUFFIX" "$target_arch"
+}
+
 qmake6_qmake_make() {
     local build_mode="$1"
     shift
@@ -579,6 +586,7 @@ qmake6_qmake_make() {
     local qmake6_qmake
     local arch_build_dir
     local apk_path
+    local apk_name
     local -a apk_paths
     local -a package_args=("${_p[@]}")
 
@@ -617,7 +625,8 @@ qmake6_qmake_make() {
         fi
         apk_path="${apk_paths[0]}"
         mkdir -p "${build_dir}/abi-apks"
-        mv "$apk_path" "${build_dir}/abi-apks/${target_arch}.apk"
+        apk_name="$(android_abi_apk_name "$build_mode" "$target_arch")"
+        mv "$apk_path" "${build_dir}/abi-apks/${apk_name}"
         popd > /dev/null
     done
 }
@@ -700,7 +709,7 @@ pass_artifact_to_job() {
             read -r -a target_archs <<< "${TARGET_ARCHS}"
             apk_paths=()
             for target_arch in "${target_archs[@]}"; do
-                package_path="${BUILD_ROOT}/${build_mode}/abi-apks/${target_arch}.apk"
+                package_path="${BUILD_ROOT}/${build_mode}/abi-apks/$(android_abi_apk_name "$build_mode" "$target_arch")"
                 [[ -f "$package_path" ]] || {
                     echo "Missing Android APK for ${build_mode}/${target_arch}" >&2
                     exit 1
