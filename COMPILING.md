@@ -244,6 +244,32 @@ Build experimental Qt 6 APK ZIPs with:
 tools/android-build.sh --stream qt6 --log android-qt6.log
 ```
 
+### Signing and the Google Play attempt
+
+Release builds are signed when `JAMULUS_ANDROID_KEYSTORE` (a file) or
+`JAMULUS_ANDROID_KEYSTORE_BASE64`, `JAMULUS_ANDROID_KEY_ALIAS`,
+`JAMULUS_ANDROID_KEYSTORE_PASSWORD` and `JAMULUS_ANDROID_KEY_PASSWORD` are set;
+otherwise a generated debug key is used. This applies to both streams. In
+GitHub Actions the keystore and passwords come from the `ANDROID_KEYSTORE`,
+`ANDROID_KEY_ALIAS`, `ANDROID_KEYSTORE_PASSWORD` and `ANDROID_KEY_PASSWORD`
+secrets, used only when all four are present.
+
+Only on request, the Qt 5 stream can build a release Android App Bundle (`.aab`)
+instead of an APK. This is a best-effort attempt: Qt 5 targets API 30, which
+Google Play is likely to reject for new uploads. A release keystore is required.
+
+```bash
+tools/android-build.sh --stream qt5 build get-artifacts play-store
+```
+
+This writes `deploy/jamulus_<version>_android_release_qt5.aab` and copies it to
+`play-store/`. The `autobuild.yml` workflow can do the same, and upload the bundle
+to Google Play via Workload Identity Federation, when started manually with
+`android_play_store_upload` (repository variables `GCP_WORKLOAD_IDENTITY_PROVIDER`
+and `GCP_SERVICE_ACCOUNT_EMAIL` are required, and the run must be a published
+release). Uploads go to internal app sharing unless
+`android_play_store_real_publish` is selected, which creates a draft on the beta track.
+
 ### Build options
 
 - Both streams default to all four ABIs and debug and release modes. Qt 5
