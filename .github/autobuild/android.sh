@@ -407,7 +407,6 @@ prepare_debug_keystore() {
             -validity 10000 \
             -dname "CN=Android Debug,O=Android,C=US"
         chmod 600 "${ANDROID_KEYSTORE_FILE}"
-        [[ -n "${JAMULUS_ANDROID_DEBUG_KEYSTORE:-}" ]] || trap 'rm -f ${ANDROID_KEYSTORE_FILE}' EXIT
     fi
 }
 
