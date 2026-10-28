@@ -258,6 +258,11 @@ tools/android-build.sh --stream qt5 --log android-qt5.log
 
     Set `ANDROID_NDK_ROOT` or `QT_DIR` to use different installed toolchains.
     Set `ANDROID_PLATFORM` to select the Android SDK platform.
+- Local development signing uses a temporary debug keystore by default; it is
+    deleted after the build. Set `JAMULUS_ANDROID_DEBUG_KEYSTORE` to retain and
+    reuse a debug keystore. An existing file must be a valid Android debug
+    keystore; a missing file is created and retained. This key is for local
+    development only, not for publishing releases.
 - Release builds use the normal positive Git revision count as their Android
     version code for non-development versions. Development builds default to
     version code `1`. Set `JAMULUS_ANDROID_VERSION_CODE` when a build needs an

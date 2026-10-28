@@ -389,25 +389,45 @@ prepare_keystore() {
 }
 
 prepare_debug_keystore() {
-    ANDROID_KEYSTORE_FILE="$(absolute_path "${JAMULUS_ANDROID_DEBUG_KEYSTORE:-${HOME}/.jamulus-android-signing.jks}")"
+    local debug_keystore="${JAMULUS_ANDROID_DEBUG_KEYSTORE:-}"
+
     JAMULUS_ANDROID_KEYSTORE_PASSWORD="android"
     JAMULUS_ANDROID_KEY_ALIAS="androiddebugkey"
     JAMULUS_ANDROID_KEY_PASSWORD="android"
 
-    if [[ ! -f "${ANDROID_KEYSTORE_FILE}" ]]; then
-        mkdir -p "$(dirname "${ANDROID_KEYSTORE_FILE}")"
-
-        keytool -genkeypair \
-            -keystore "${ANDROID_KEYSTORE_FILE}" \
-            -storepass "${JAMULUS_ANDROID_KEYSTORE_PASSWORD}" \
-            -alias "${JAMULUS_ANDROID_KEY_ALIAS}" \
-            -keypass "${JAMULUS_ANDROID_KEY_PASSWORD}" \
-            -keyalg RSA \
-            -keysize 2048 \
-            -validity 10000 \
-            -dname "CN=Android Debug,O=Android,C=US"
-        chmod 600 "${ANDROID_KEYSTORE_FILE}"
+    if [[ -n "$debug_keystore" ]]; then
+        ANDROID_KEYSTORE_FILE="$(absolute_path "$debug_keystore")"
+        if [[ -e "$ANDROID_KEYSTORE_FILE" || -L "$ANDROID_KEYSTORE_FILE" ]]; then
+            if [[ -f "$ANDROID_KEYSTORE_FILE" && -r "$ANDROID_KEYSTORE_FILE" ]] &&
+                keytool -list -keystore "$ANDROID_KEYSTORE_FILE" \
+                    -storepass "$JAMULUS_ANDROID_KEYSTORE_PASSWORD" \
+                    -alias "$JAMULUS_ANDROID_KEY_ALIAS" > /dev/null 2>&1; then
+                return
+            else
+                echo "Invalid Android debug keystore: $ANDROID_KEYSTORE_FILE" >&2
+                exit 1
+            fi
+        fi
+    else
+        if ! ANDROID_KEYSTORE_TEMP_DIR="$(mktemp -d "${TMPDIR:-/tmp}/jamulus-android-debug-signing.XXXXXX")"; then
+            echo "Failed to create temporary Android debug keystore" >&2
+            exit 1
+        fi
+        ANDROID_KEYSTORE_FILE="${ANDROID_KEYSTORE_TEMP_DIR}/debug.jks"
+        trap 'rm -rf -- "$ANDROID_KEYSTORE_TEMP_DIR"' EXIT
     fi
+
+    mkdir -p "$(dirname "$ANDROID_KEYSTORE_FILE")"
+    keytool -genkeypair \
+        -keystore "$ANDROID_KEYSTORE_FILE" \
+        -storepass "$JAMULUS_ANDROID_KEYSTORE_PASSWORD" \
+        -alias "$JAMULUS_ANDROID_KEY_ALIAS" \
+        -keypass "$JAMULUS_ANDROID_KEY_PASSWORD" \
+        -keyalg RSA \
+        -keysize 2048 \
+        -validity 10000 \
+        -dname "CN=Android Debug,O=Android,C=US"
+    chmod 600 "$ANDROID_KEYSTORE_FILE"
 }
 
 absolute_path() {
