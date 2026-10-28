@@ -435,9 +435,18 @@ validate_signing() {
     fi
 }
 
+cleanup_signing_for_mode() {
+    if [[ -n "${ANDROID_KEYSTORE_CLEANUP_FILE:-}" ]]; then
+        rm -f -- "$ANDROID_KEYSTORE_CLEANUP_FILE"
+        unset ANDROID_KEYSTORE_CLEANUP_FILE
+    fi
+    trap - EXIT
+    unset ANDROID_KEYSTORE_FILE
+}
+
 prepare_signing_for_mode() {
     local build_mode="$1"
-    unset ANDROID_KEYSTORE_FILE
+    cleanup_signing_for_mode
     [[ "$build_mode" == release ]] || return 0
 
     if [[ -n "${JAMULUS_ANDROID_KEYSTORE:-}" || -n "${JAMULUS_ANDROID_KEYSTORE_BASE64:-}" ]]; then
@@ -462,7 +471,8 @@ prepare_keystore() {
         original_umask="$(umask)"
         umask 077
         ANDROID_KEYSTORE_FILE="${HOME}/.jamulus-android-signing.jks"
-        trap 'rm -f -- "$ANDROID_KEYSTORE_FILE"' EXIT
+        ANDROID_KEYSTORE_CLEANUP_FILE="$ANDROID_KEYSTORE_FILE"
+        trap cleanup_signing_for_mode EXIT
         if ! printf '%s' "$JAMULUS_ANDROID_KEYSTORE_BASE64" | base64 --decode > "$ANDROID_KEYSTORE_FILE"; then
             umask "$original_umask"
             echo "Failed to decode Android keystore" >&2
@@ -492,7 +502,10 @@ prepare_debug_keystore() {
             -validity 10000 \
             -dname "CN=Android Debug,O=Android,C=US"
         chmod 600 "${ANDROID_KEYSTORE_FILE}"
-        [[ -n "${JAMULUS_ANDROID_DEBUG_KEYSTORE:-}" ]] || trap 'rm -f ${ANDROID_KEYSTORE_FILE}' EXIT
+        if [[ -z "${JAMULUS_ANDROID_DEBUG_KEYSTORE:-}" ]]; then
+            ANDROID_KEYSTORE_CLEANUP_FILE="$ANDROID_KEYSTORE_FILE"
+            trap cleanup_signing_for_mode EXIT
+        fi
     fi
 }
 
@@ -736,6 +749,7 @@ case "${1:-}" in
         for build_mode in $BUILD_MODES; do
             prepare_signing_for_mode "$build_mode"
             build_app "$build_mode"
+            cleanup_signing_for_mode
         done
         ;;
     get-artifacts)
