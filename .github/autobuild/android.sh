@@ -378,15 +378,13 @@ prepare_keystore() {
     fi
 
     if [[ -n "${JAMULUS_ANDROID_KEYSTORE_BASE64:-}" ]]; then
-        ANDROID_KEYSTORE_FILE=~/.jamulus-android-signing.jks
-        if ! touch "$ANDROID_KEYSTORE_FILE"; then
-            echo "Failed to create Android keystore file: $ANDROID_KEYSTORE_FILE" >&2
+        if ! ANDROID_KEYSTORE_FILE="$(mktemp "${TMPDIR:-/tmp}/jamulus-android-signing.XXXXXX")"; then
+            echo "Failed to create temporary Android keystore file" >&2
             exit 1
         fi
-        trap 'rm -f $ANDROID_KEYSTORE_FILE' EXIT
-        touch "$ANDROID_KEYSTORE_FILE"
+        trap 'rm -f -- "$ANDROID_KEYSTORE_FILE"' EXIT
         chmod 600 "$ANDROID_KEYSTORE_FILE"
-        printf '%s' "$JAMULUS_ANDROID_KEYSTORE_BASE64" | base64 --decode >> $ANDROID_KEYSTORE_FILE
+        printf '%s' "$JAMULUS_ANDROID_KEYSTORE_BASE64" | base64 --decode > "$ANDROID_KEYSTORE_FILE"
     fi
 }
 
