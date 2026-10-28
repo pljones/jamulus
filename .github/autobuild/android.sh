@@ -435,9 +435,18 @@ validate_signing() {
     fi
 }
 
+cleanup_signing_for_mode() {
+    if [[ -n "${ANDROID_KEYSTORE_CLEANUP_FILE:-}" ]]; then
+        rm -f -- "$ANDROID_KEYSTORE_CLEANUP_FILE"
+        unset ANDROID_KEYSTORE_CLEANUP_FILE
+    fi
+    trap - EXIT
+    unset ANDROID_KEYSTORE_FILE
+}
+
 prepare_signing_for_mode() {
     local build_mode="$1"
-    unset ANDROID_KEYSTORE_FILE
+    cleanup_signing_for_mode
     [[ "$build_mode" == release ]] || return 0
 
     if [[ -n "${JAMULUS_ANDROID_KEYSTORE:-}" || -n "${JAMULUS_ANDROID_KEYSTORE_BASE64:-}" ]]; then
@@ -495,6 +504,8 @@ prepare_debug_keystore() {
                 echo "Invalid Android debug keystore: $ANDROID_KEYSTORE_FILE" >&2
                 exit 1
             fi
+        else
+            mkdir -p "$(dirname "${ANDROID_KEYSTORE_FILE}")"
         fi
     else
         if ! ANDROID_KEYSTORE_TEMP_DIR="$(mktemp -d "${TMPDIR:-/tmp}/jamulus-android-debug-signing.XXXXXX")"; then
@@ -777,6 +788,7 @@ case "${1:-}" in
         for build_mode in $BUILD_MODES; do
             prepare_signing_for_mode "$build_mode"
             build_app "$build_mode"
+            cleanup_signing_for_mode
         done
         ;;
     get-artifacts)
