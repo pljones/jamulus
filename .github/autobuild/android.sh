@@ -510,7 +510,7 @@ pass_artifact_to_job() {
 
     for build_mode in $BUILD_MODES; do
         artifact="jamulus_${JAMULUS_BUILD_VERSION}_android_${build_mode}${ARTIFACT_SUFFIX}.apk"
-        package_path="$(find "${BUILD_ROOT}/${build_mode}/build/outputs" -type f -name '*.apk' -print -quit)"
+        package_path="$(find "${BUILD_ROOT}/${build_mode}/build/outputs" -type f -name '*-signed.apk' -print -quit)"
         [[ -n "$package_path" ]] || {
             echo "No Android APK was produced for ${build_mode}" >&2
             exit 1
