@@ -527,12 +527,22 @@ pass_artifact_to_job() {
 
 distclean_android() {
     local generated_path
+    local canonical_path
+    local -a output_paths=()
 
     for generated_path in "$BUILD_ROOT" "$DEPLOY_DIR"; do
-        [[ "$generated_path" != / && "$generated_path" != "$PROJECT_DIR" ]] || {
+        canonical_path="$(realpath -m -- "$generated_path")" || {
+            echo "Failed to resolve Android output path: $generated_path" >&2
+            exit 1
+        }
+        [[ "$canonical_path" != / && "$canonical_path" != "$PROJECT_DIR" && "$PROJECT_DIR" != "$canonical_path/"* ]] || {
             echo "Refusing to remove unsafe Android output path: $generated_path" >&2
             exit 1
         }
+        output_paths+=("$canonical_path")
+    done
+
+    for generated_path in "${output_paths[@]}"; do
         rm -rf -- "$generated_path"
     done
 

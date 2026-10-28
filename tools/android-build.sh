@@ -149,7 +149,7 @@ run_distclean() {
     if [[ -f "${PROJECT_DIR}/Makefile" ]]; then
         run_logged make -C "$PROJECT_DIR" distclean || :
     fi
-    run_logged "$ANDROID_SH" distclean || :
+    run_logged "$ANDROID_SH" distclean
 }
 
 run_stage() {
