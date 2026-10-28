@@ -50,7 +50,7 @@ set -eu
 
 set -o pipefail
 
-if [[ ! ${JAMULUS_BUILD_VERSION:-} =~ [0-9]+\.[0-9]+\.[0-9]+ ]]; then
+if [[ ${1:-} != distclean && ! ${JAMULUS_BUILD_VERSION:-} =~ [0-9]+\.[0-9]+\.[0-9]+ ]]; then
     echo "Environment variable JAMULUS_BUILD_VERSION has to be set to a valid version string"
     exit 1
 fi
