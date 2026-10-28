@@ -373,7 +373,7 @@ prepare_keystore() {
             echo "Android keystore is not readable: $JAMULUS_ANDROID_KEYSTORE" >&2
             exit 1
         }
-        ANDROID_KEYSTORE_FILE="$JAMULUS_ANDROID_KEYSTORE"
+        ANDROID_KEYSTORE_FILE="$(absolute_path "$JAMULUS_ANDROID_KEYSTORE")"
         return
     fi
 
@@ -389,7 +389,7 @@ prepare_keystore() {
 }
 
 prepare_debug_keystore() {
-    ANDROID_KEYSTORE_FILE="${JAMULUS_ANDROID_DEBUG_KEYSTORE:-${HOME}/.jamulus-android-signing.jks}"
+    ANDROID_KEYSTORE_FILE="$(absolute_path "${JAMULUS_ANDROID_DEBUG_KEYSTORE:-${HOME}/.jamulus-android-signing.jks}")"
     JAMULUS_ANDROID_KEYSTORE_PASSWORD="android"
     JAMULUS_ANDROID_KEY_ALIAS="androiddebugkey"
     JAMULUS_ANDROID_KEY_PASSWORD="android"
@@ -408,6 +408,13 @@ prepare_debug_keystore() {
             -dname "CN=Android Debug,O=Android,C=US"
         chmod 600 "${ANDROID_KEYSTORE_FILE}"
     fi
+}
+
+absolute_path() {
+    local path="$1"
+
+    [[ "$path" == /* ]] || path="${PWD}/${path}"
+    printf '%s' "$path"
 }
 
 keystore_type() {
