@@ -15,6 +15,10 @@
 #     for every tag that starts with 'r' and does not have any suffix:
 #          - do CodeQl while building for every platform
 #          - publish the created binaries/packs only as artifacts/appendix as a release
+# Android release builds are signed when the ANDROID_* signing secrets are all set.
+# A manual run with android_play_store_upload builds only the Qt 5 release .aab (instead of the
+# .apk and all other targets) and, for published releases only, uploads it to Google Play
+# (see publish_android_play_store); android_play_store_real_publish selects beta draft instead of internal sharing.
 
 on:
   workflow_dispatch:
@@ -22,6 +26,12 @@ on:
       build_all_targets:
         type: boolean
         description: 'Build all targets (instead of just the main platforms)'
+      android_play_store_upload:
+        type: boolean
+        description: 'Android: build a Qt 5 release .aab and upload it to Google Play (needs release signing and Play secrets/variables)'
+      android_play_store_real_publish:
+        type: boolean
+        description: 'Android: upload to the beta track as a draft instead of internal app sharing'
   push:
     tags:
       - 'r*'
@@ -70,6 +80,8 @@ jobs:
       tag_name:                     ${{ steps.get-build-vars.outputs.RELEASE_TAG }}
       build_version:                ${{ steps.get-build-vars.outputs.BUILD_VERSION }}
       build_all_targets:            ${{ steps.decide-build-targets.outputs.build_all_targets }}
+      android_signing_ready:        ${{ steps.android-readiness.outputs.signing_ready }}
+      android_play_store_upload:    ${{ steps.android-readiness.outputs.play_store_upload }}
     env:
       release_changelog_path:       ./.github_release_changelog.md
     # Set permissions. We need write permissions to content for creating/removing the release
@@ -109,6 +121,33 @@ jobs:
           release_name:             ${{ steps.get-build-vars.outputs.RELEASE_TITLE }}
           body_path:                ${{ env.release_changelog_path }}
           prerelease:               ${{ steps.get-build-vars.outputs.IS_PRERELEASE }}
+
+      - name:                       Check Android signing and Google Play readiness
+        id:                         android-readiness
+        env:
+          HAVE_KEYSTORE:            ${{ secrets.ANDROID_KEYSTORE != '' }}
+          HAVE_KEY_ALIAS:           ${{ secrets.ANDROID_KEY_ALIAS != '' }}
+          HAVE_KEYSTORE_PASSWORD:   ${{ secrets.ANDROID_KEYSTORE_PASSWORD != '' }}
+          HAVE_KEY_PASSWORD:        ${{ secrets.ANDROID_KEY_PASSWORD != '' }}
+          HAVE_GCP_PROVIDER:        ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER != '' }}
+          HAVE_GCP_SERVICE_ACCOUNT: ${{ vars.GCP_SERVICE_ACCOUNT_EMAIL != '' }}
+          INPUT_PLAY_STORE_UPLOAD:  ${{ github.event.inputs.android_play_store_upload }}
+        run:                        |
+          set -eu
+          signing_ready=false
+          if [[ "${HAVE_KEYSTORE}" == 'true' && "${HAVE_KEY_ALIAS}" == 'true' && "${HAVE_KEYSTORE_PASSWORD}" == 'true' && "${HAVE_KEY_PASSWORD}" == 'true' ]]; then
+            signing_ready=true
+          fi
+          play_store_upload=false
+          if [[ "${GITHUB_EVENT_NAME}" == 'workflow_dispatch' && "${INPUT_PLAY_STORE_UPLOAD}" == 'true' ]]; then
+            if [[ "${signing_ready}" == 'true' && "${HAVE_GCP_PROVIDER}" == 'true' && "${HAVE_GCP_SERVICE_ACCOUNT}" == 'true' ]]; then
+              play_store_upload=true
+            else
+              echo "::warning::Android Google Play upload requested but signing secrets or GCP variables are missing; skipping."
+            fi
+          fi
+          echo "signing_ready=${signing_ready}" >> $GITHUB_OUTPUT
+          echo "play_store_upload=${play_store_upload}" >> $GITHUB_OUTPUT
 
       - name:                       Decide which targets to build for
         id:                         decide-build-targets
@@ -206,6 +245,17 @@ jobs:
             # Jamulus.pro needs to count git history length for android versioning:
             checkout_fetch_depth:   '0'
 
+          # Replaces the Qt 5 .apk build when requested (workflow_dispatch with android_play_store_upload); see the exclude rules below.
+          - config_name:            Android Qt5 .aab (Google Play)
+            target_os:              android
+            building_on_os:         ubuntu-22.04
+            base_command:           JAVA_HOME= QT_DIR= ANDROID_NDK_ROOT= ANDROID_SDK_ROOT= JAMULUS_ANDROID_STREAM=qt5 JAMULUS_ANDROID_PACKAGE_FORMAT=aab BUILD_MODES=release ./.github/autobuild/android.sh
+            run_codeql:             false
+            is_main_build_target:   true
+            play_store_upload:      true
+            dependency_cache_key:   qt5
+            checkout_fetch_depth:   '0'
+
           - config_name:            Android Qt6 ABI APK ZIPs (experimental)
             target_os:              android
             building_on_os:         ubuntu-22.04
@@ -286,12 +336,21 @@ jobs:
         # This injects the build_all_targets information into each matrix output:
         build_all_targets:
           - ${{ needs.create_release.outputs.build_all_targets }}
+        play_store_upload:
+          - ${{ needs.create_release.outputs.android_play_store_upload }}
 
-        # Exclude all non-main build targets if we are not building for all targets:
         exclude:
+          # Exclude all non-main build targets if we are not building for all targets:
           - build_all_targets:      'false'  # This is based on a script output and is therefore a string
             config:
               is_main_build_target: null
+          # Exclusions: the Qt 5 .aab unless uploading to Google Play; everything except the .aab when uploading.
+          - play_store_upload:      'false'
+            config:
+              play_store_upload:    true
+          - play_store_upload:      'true'
+            config:
+              play_store_upload:    null
 
     runs-on:                        ${{ matrix.config.building_on_os }}
     steps:
@@ -388,6 +447,11 @@ jobs:
           #  For every certificate, export it as base64 encoded string with `base64 -i certificate.p12`
           #  Set the certificates based on the variables below
           JAMULUS_BUILD_VERSION:    ${{ needs.create_release.outputs.build_version }}
+          # Android release signing: all-or-nothing, otherwise release builds use a generated debug key.
+          JAMULUS_ANDROID_KEYSTORE_BASE64:   ${{ needs.create_release.outputs.android_signing_ready == 'true' && secrets.ANDROID_KEYSTORE || '' }}
+          JAMULUS_ANDROID_KEY_ALIAS:         ${{ needs.create_release.outputs.android_signing_ready == 'true' && secrets.ANDROID_KEY_ALIAS || '' }}
+          JAMULUS_ANDROID_KEYSTORE_PASSWORD: ${{ needs.create_release.outputs.android_signing_ready == 'true' && secrets.ANDROID_KEYSTORE_PASSWORD || '' }}
+          JAMULUS_ANDROID_KEY_PASSWORD:      ${{ needs.create_release.outputs.android_signing_ready == 'true' && secrets.ANDROID_KEY_PASSWORD || '' }}
           MACOS_CERTIFICATE_DEV_ID_APPLICATION:        ${{ secrets.MACOS_CERT }} # Base64 encoded Developer ID Application certificate. See https://help.apple.com/xcode/mac/current/#/dev154b28f09
           MACOS_CERTIFICATE_DEV_ID_APPLICATION_PWD:    ${{ secrets.MACOS_CERT_PWD }} # Password protecting secrets.MACOS_CERTIFICATE_DEV_ID_APPLICATION
           MACOS_CERTIFICATE_DEV_ID_APPLICATION_ID:     ${{ secrets.MACOS_CERT_ID }} # Certificate ID of secrets.MACOS_CERTIFICATE_DEV_ID_APPLICATION. If unknown, import secrets.MACOS_CERT into keychain and get the hash via "security find-identity -v"
@@ -452,7 +516,8 @@ jobs:
           ARTIFACT_PATH:            deploy/${{ steps.get-artifacts.outputs.artifact_1 }}
 
       - name:                       Deploy Artifact 1 to Release
-        if:                         needs.create_release.outputs.publish_to_release == 'true'
+        if:                         needs.create_release.outputs.publish_to_release == 'true' &&
+                                    !matrix.config.play_store_upload
         id:                         upload-release-asset1
         run:                        >
           gh release upload "${{ needs.create_release.outputs.tag_name }}" "deploy/${{ steps.get-artifacts.outputs.artifact_1 }}" --clobber
@@ -460,6 +525,7 @@ jobs:
           GITHUB_TOKEN:             ${{ secrets.GITHUB_TOKEN }}
       - name:                       Deploy Artifact 2 to Release
         if:                         needs.create_release.outputs.publish_to_release == 'true' &&
+                                    !matrix.config.play_store_upload &&
                                     steps.get-artifacts.outputs.artifact_2
         id:                         upload-release-asset2
         run:                        >
@@ -469,6 +535,52 @@ jobs:
       - name:                       Perform CodeQL Analysis
         if:                         matrix.config.run_codeql
         uses:                       github/codeql-action/analyze@v4.38.1
+
+  publish_android_play_store:
+    name:                           Upload Android Qt5 .aab to Google Play (if requested)
+    runs-on:                        ubuntu-22.04
+    needs:                          [create_release, release_assets]
+    if:                             needs.create_release.outputs.publish_to_release == 'true' &&
+                                    needs.create_release.outputs.android_play_store_upload == 'true'
+    permissions:
+      contents:                     read
+      id-token:                     write
+    steps:
+      - name:                       Checkout code
+        uses:                       actions/checkout@v7
+
+      - name:                       Download the Android .aab
+        uses:                       actions/download-artifact@v8
+        with:
+          name:                     jamulus_${{ needs.create_release.outputs.build_version }}_android_release_qt5.aab
+          path:                     deploy
+
+      - name:                       Select the release bundle
+        id:                         select-bundle
+        run:                        ./.github/autobuild/android-play-store.sh deploy play-store
+
+      - name:                       Authenticate to Google Cloud
+        id:                         gcloud-auth
+        uses:                       google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account:          ${{ vars.GCP_SERVICE_ACCOUNT_EMAIL }}
+
+      - name:                       Upload to Google Play
+        id:                         upload
+        uses:                       r0adkll/upload-google-play@e738b9dd8f2476ea806d921b64aacd24f34515a5 # v1.1.5
+        with:
+          serviceAccountJson:       ${{ steps.gcloud-auth.outputs.credentials_file_path }}
+          packageName:              app.jamulus.jamulus
+          releaseFiles:             ${{ steps.select-bundle.outputs.release_file }}
+          releaseName:              ${{ needs.create_release.outputs.build_version }}
+          track:                    ${{ github.event.inputs.android_play_store_real_publish == 'true' && 'beta' || 'internalsharing' }}
+          status:                   ${{ github.event.inputs.android_play_store_real_publish == 'true' && 'draft' || 'completed' }}
+
+      - name:                       Report internal sharing link
+        if:                         steps.upload.outputs.internalSharingDownloadUrl
+        run:                        |
+          echo "Internal sharing URL: ${{ steps.upload.outputs.internalSharingDownloadUrl }}"
 
   create_deb_repo:
     name:                           Create files for .deb repository (if requested)

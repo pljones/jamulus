@@ -33,6 +33,7 @@ readonly SCRIPT_NAME
 PROJECT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 readonly PROJECT_DIR
 readonly ANDROID_SH="${PROJECT_DIR}/.github/autobuild/android.sh"
+readonly ANDROID_PLAY_STORE_SH="${PROJECT_DIR}/.github/autobuild/android-play-store.sh"
 
 MANAGED_VARS=(
     JAVA_HOME
@@ -50,6 +51,7 @@ MANAGED_VARS=(
     JAMULUS_ANDROID_MAKE_JOBS
     JAMULUS_ANDROID_STREAM
     JAMULUS_ANDROID_ARTIFACT_SUFFIX
+    JAMULUS_ANDROID_PACKAGE_FORMAT
     JAMULUS_ANDROID_VERSION_CODE
     JAMULUS_ANDROID_BUILD_DIR
     JAMULUS_ANDROID_DEPLOY_DIR
@@ -180,6 +182,9 @@ run_stage() {
         setup | build | get-artifacts)
             run_logged "$ANDROID_SH" "$stage"
             ;;
+        play-store)
+            run_logged "$ANDROID_PLAY_STORE_SH"
+            ;;
         distclean)
             run_distclean
             ;;
@@ -187,6 +192,15 @@ run_stage() {
             error "unknown stage: $stage"
             ;;
     esac
+}
+
+has_stage() {
+    local requested_stage="$1"
+    local stage
+    for stage in "${STAGES[@]}"; do
+        [[ "$stage" == "$requested_stage" ]] && return 0
+    done
+    return 1
 }
 
 resolve_settings_file() {
@@ -221,6 +235,8 @@ Stages:
     distclean      make distclean (if a Makefile exists) and remove Android build and deploy outputs
     build          Build selected debug/release packages
     get-artifacts  Rename packages into deploy/
+    play-store     Qt 5 only: copy the release App Bundle from deploy/ to play-store/
+                   (also selects an App Bundle, release-only build; needs a release keystore)
     all            distclean, build, and get-artifacts (default)
 
 Options:
@@ -292,7 +308,7 @@ while [[ $# -gt 0 ]]; do
             STAGES+=(distclean build get-artifacts)
             shift
             ;;
-        setup | distclean | build | get-artifacts)
+        setup | distclean | build | get-artifacts | play-store)
             STAGES+=("$1")
             shift
             ;;
@@ -308,6 +324,8 @@ fi
 
 cd "$PROJECT_DIR"
 [[ -x "$ANDROID_SH" || -f "$ANDROID_SH" ]] || error "cannot find $ANDROID_SH"
+[[ -x "$ANDROID_PLAY_STORE_SH" || -f "$ANDROID_PLAY_STORE_SH" ]] ||
+    error "cannot find $ANDROID_PLAY_STORE_SH"
 
 JAMULUS_ANDROID_STREAM="${OPTION_STREAM:-${JAMULUS_ANDROID_STREAM:-qt5}}"
 [[ "$JAMULUS_ANDROID_STREAM" == qt5 || "$JAMULUS_ANDROID_STREAM" == qt6 ]] ||
@@ -333,6 +351,13 @@ load_settings_file "$(resolve_settings_file "$SETTINGS_FILE")"
 [[ -n "$OPTION_BUILD_MODES" ]] && BUILD_MODES="$OPTION_BUILD_MODES"
 [[ -n "$OPTION_TARGET_ARCHS" ]] && TARGET_ARCHS="$OPTION_TARGET_ARCHS"
 [[ -n "$OPTION_MAKE_JOBS" ]] && export JAMULUS_ANDROID_MAKE_JOBS="$OPTION_MAKE_JOBS"
+if has_stage play-store; then
+    [[ "$JAMULUS_ANDROID_STREAM" == qt5 ]] || error "the play-store stage requires --stream qt5"
+    BUILD_MODES=release
+    # Exported through MANAGED_VARS.
+    # shellcheck disable=SC2034
+    JAMULUS_ANDROID_PACKAGE_FORMAT=aab
+fi
 apply_local_defaults
 export_managed_env
 ensure_java_on_path
