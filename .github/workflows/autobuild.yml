@@ -17,7 +17,7 @@
 #          - publish the created binaries/packs only as artifacts/appendix as a release
 # Android release builds are signed when the ANDROID_* signing secrets are all set.
 # A manual run with android_play_store_upload builds only the Qt 5 release .aab (instead of the
-# .apk and all other targets) and, for published releases only, uploads it to Google Play
+# .apk and all other targets) and uploads it to Google Play (the run fails early if prerequisites are missing)
 # (see publish_android_play_store); android_play_store_real_publish selects beta draft instead of internal sharing.
 
 on:
@@ -91,6 +91,28 @@ jobs:
       - name:                       Checkout code
         uses:                       actions/checkout@v7
 
+      - name:                       Fail fast if a requested Google Play upload cannot be done
+        if:                         github.event_name == 'workflow_dispatch' && github.event.inputs.android_play_store_upload == 'true'
+        env:
+          HAVE_KEYSTORE:            ${{ secrets.ANDROID_KEYSTORE != '' }}
+          HAVE_KEY_ALIAS:           ${{ secrets.ANDROID_KEY_ALIAS != '' }}
+          HAVE_KEYSTORE_PASSWORD:   ${{ secrets.ANDROID_KEYSTORE_PASSWORD != '' }}
+          HAVE_KEY_PASSWORD:        ${{ secrets.ANDROID_KEY_PASSWORD != '' }}
+          HAVE_GCP_PROVIDER:        ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER != '' }}
+          HAVE_GCP_SERVICE_ACCOUNT: ${{ vars.GCP_SERVICE_ACCOUNT_EMAIL != '' }}
+        run:                        |
+          missing=""
+          [[ "${HAVE_KEYSTORE}" == 'true' ]] || missing="${missing} secrets.ANDROID_KEYSTORE"
+          [[ "${HAVE_KEY_ALIAS}" == 'true' ]] || missing="${missing} secrets.ANDROID_KEY_ALIAS"
+          [[ "${HAVE_KEYSTORE_PASSWORD}" == 'true' ]] || missing="${missing} secrets.ANDROID_KEYSTORE_PASSWORD"
+          [[ "${HAVE_KEY_PASSWORD}" == 'true' ]] || missing="${missing} secrets.ANDROID_KEY_PASSWORD"
+          [[ "${HAVE_GCP_PROVIDER}" == 'true' ]] || missing="${missing} vars.GCP_WORKLOAD_IDENTITY_PROVIDER"
+          [[ "${HAVE_GCP_SERVICE_ACCOUNT}" == 'true' ]] || missing="${missing} vars.GCP_SERVICE_ACCOUNT_EMAIL"
+          if [[ -n "${missing}" ]]; then
+            echo "::error::Google Play upload requested but these are not set:${missing}"
+            exit 1
+          fi
+
       - name:                       Determine release version, type and prerelease variables
         run:                        ./.github/autobuild/get_build_vars.py
         id:                         get-build-vars
@@ -143,7 +165,8 @@ jobs:
             if [[ "${signing_ready}" == 'true' && "${HAVE_GCP_PROVIDER}" == 'true' && "${HAVE_GCP_SERVICE_ACCOUNT}" == 'true' ]]; then
               play_store_upload=true
             else
-              echo "::warning::Android Google Play upload requested but signing secrets or GCP variables are missing; skipping."
+              echo "::error::Android Google Play upload requested but signing secrets (ANDROID_KEYSTORE, ANDROID_KEY_ALIAS, ANDROID_KEYSTORE_PASSWORD, ANDROID_KEY_PASSWORD) or GCP variables (GCP_WORKLOAD_IDENTITY_PROVIDER, GCP_SERVICE_ACCOUNT_EMAIL) are missing."
+              exit 1
             fi
           fi
           echo "signing_ready=${signing_ready}" >> $GITHUB_OUTPUT
@@ -540,10 +563,9 @@ jobs:
     name:                           Upload Android Qt5 .aab to Google Play (if requested)
     runs-on:                        ubuntu-22.04
     needs:                          [create_release, release_assets]
-    if:                             needs.create_release.outputs.publish_to_release == 'true' &&
-                                    needs.create_release.outputs.android_play_store_upload == 'true'
+    if:                             needs.create_release.outputs.android_play_store_upload == 'true'
     permissions:
-      contents:                     read
+      contents:                     write
       id-token:                     write
     steps:
       - name:                       Checkout code
@@ -574,13 +596,24 @@ jobs:
           packageName:              app.jamulus.jamulus
           releaseFiles:             ${{ steps.select-bundle.outputs.release_file }}
           releaseName:              ${{ needs.create_release.outputs.build_version }}
-          track:                    ${{ github.event.inputs.android_play_store_real_publish == 'true' && 'beta' || 'internalsharing' }}
+          tracks:                   ${{ github.event.inputs.android_play_store_real_publish == 'true' && 'beta' || 'internalsharing' }}
           status:                   ${{ github.event.inputs.android_play_store_real_publish == 'true' && 'draft' || 'completed' }}
 
       - name:                       Report internal sharing link
         if:                         steps.upload.outputs.internalSharingDownloadUrl
         run:                        |
           echo "Internal sharing URL: ${{ steps.upload.outputs.internalSharingDownloadUrl }}"
+          echo "Internal sharing URL: ${{ steps.upload.outputs.internalSharingDownloadUrl }}" >> "${GITHUB_STEP_SUMMARY}"
+
+      - name:                       Attach internal sharing link to the release
+        if:                         steps.upload.outputs.internalSharingDownloadUrl &&
+                                    needs.create_release.outputs.publish_to_release == 'true'
+        run:                        |
+          url_file="deploy/jamulus_${{ needs.create_release.outputs.build_version }}_android_release_qt5_internal_sharing.url"
+          echo "${{ steps.upload.outputs.internalSharingDownloadUrl }}" > "${url_file}"
+          gh release upload "${{ needs.create_release.outputs.tag_name }}" "${url_file}" --clobber
+        env:
+          GITHUB_TOKEN:             ${{ secrets.GITHUB_TOKEN }}
 
   create_deb_repo:
     name:                           Create files for .deb repository (if requested)
