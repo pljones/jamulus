@@ -18,7 +18,7 @@
 # Android release builds are signed when the ANDROID_* signing secrets are all set.
 # A manual run with android_play_store_upload builds only the Qt 5 release .aab (instead of the
 # .apk and all other targets) and uploads it to Google Play (the run fails early if prerequisites are missing)
-# (see publish_android_play_store); android_play_store_real_publish selects beta draft instead of internal sharing.
+# (see publish_android_play_store); android_play_store_real_publish selects an internal testing draft instead of internal sharing.
 
 on:
   workflow_dispatch:
@@ -31,7 +31,7 @@ on:
         description: 'Android: build a Qt 5 release .aab and upload it to Google Play (needs release signing and Play secrets/variables)'
       android_play_store_real_publish:
         type: boolean
-        description: 'Android: upload to the beta track as a draft instead of internal app sharing'
+        description: 'Android: upload to the internal testing track as a draft instead of internal app sharing'
   push:
     tags:
       - 'r*'
@@ -596,7 +596,7 @@ jobs:
           packageName:              app.jamulus.jamulus.pljones_test
           releaseFiles:             ${{ steps.select-bundle.outputs.release_file }}
           releaseName:              ${{ needs.create_release.outputs.build_version }}
-          tracks:                   ${{ github.event.inputs.android_play_store_real_publish == 'true' && 'beta' || 'internalsharing' }}
+          tracks:                   ${{ github.event.inputs.android_play_store_real_publish == 'true' && 'internal' || 'internalsharing' }}
           status:                   ${{ github.event.inputs.android_play_store_real_publish == 'true' && 'draft' || 'completed' }}
 
       - name:                       Report internal sharing link

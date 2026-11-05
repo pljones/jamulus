@@ -269,7 +269,7 @@ to Google Play via Workload Identity Federation, when started manually with
 `android_play_store_upload` (repository variables `GCP_WORKLOAD_IDENTITY_PROVIDER`
 and `GCP_SERVICE_ACCOUNT_EMAIL` are required, and the run must be a published
 release). Uploads go to internal app sharing unless
-`android_play_store_real_publish` is selected, which creates a draft on the beta track.
+`android_play_store_real_publish` is selected, which creates a draft release on the internal testing track, which you then roll out in Play Console.
 
 ### Build options
 
