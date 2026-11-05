@@ -195,9 +195,10 @@ Android builds are available in two independent streams:
 | `qt5` | 5.15.2 | Multi-ABI APK | 8 | r21d (21.0.6113669) | 30.0.2 | Android 11 / API 30 | API 21-31 |
 | `qt6` | 6.10.2 | One APK per ABI, ZIPped | 17 | r27d (27.3.13750724) | 36.0.0 | Android 16 / API 36 |
 
-As of Jamulus 4.0.0, the Android package ID is `app.jamulus.jamulus`.
-Prior installation using the former `com.github.jamulussoftware.jamulus` ID will not be upgraded in-place.
-(Users must uninstall the former package before installing the new one, losing their settings).
+Android builds from this branch use the package ID
+`app.jamulus.jamulus.pljones_test` for the personal Google Play test app.
+This differs from the team's `app.jamulus.jamulus` package ID and will install
+as a separate app.
 
 The compile/target SDK is the SDK level used to build and target the app, not
 the full Android compatibility range supported by Qt:
@@ -243,6 +244,32 @@ Build experimental Qt 6 APK ZIPs with:
 ```bash
 tools/android-build.sh --stream qt6 --log android-qt6.log
 ```
+
+### Signing and the Google Play attempt
+
+Release builds are signed when `JAMULUS_ANDROID_KEYSTORE` (a file) or
+`JAMULUS_ANDROID_KEYSTORE_BASE64`, `JAMULUS_ANDROID_KEY_ALIAS`,
+`JAMULUS_ANDROID_KEYSTORE_PASSWORD` and `JAMULUS_ANDROID_KEY_PASSWORD` are set;
+otherwise a generated debug key is used. This applies to both streams. In
+GitHub Actions the keystore and passwords come from the `ANDROID_KEYSTORE`,
+`ANDROID_KEY_ALIAS`, `ANDROID_KEYSTORE_PASSWORD` and `ANDROID_KEY_PASSWORD`
+secrets, used only when all four are present.
+
+Only on request, the Qt 5 stream can build a release Android App Bundle (`.aab`)
+instead of an APK. This is a best-effort attempt: Qt 5 targets API 30, which
+Google Play is likely to reject for new uploads. A release keystore is required.
+
+```bash
+tools/android-build.sh --stream qt5 build get-artifacts play-store
+```
+
+This writes `deploy/jamulus_<version>_android_release_qt5.aab` and copies it to
+`play-store/`. The `autobuild.yml` workflow can do the same, and upload the bundle
+to Google Play via Workload Identity Federation, when started manually with
+`android_play_store_upload` (repository variables `GCP_WORKLOAD_IDENTITY_PROVIDER`
+and `GCP_SERVICE_ACCOUNT_EMAIL` are required, and the run must be a published
+release). Uploads go to internal app sharing unless
+`android_play_store_real_publish` is selected, which creates a draft release on the internal testing track, which you then roll out in Play Console.
 
 ### Build options
 
