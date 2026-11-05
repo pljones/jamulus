@@ -593,7 +593,7 @@ jobs:
         uses:                       r0adkll/upload-google-play@e738b9dd8f2476ea806d921b64aacd24f34515a5 # v1.1.5
         with:
           serviceAccountJson:       ${{ steps.gcloud-auth.outputs.credentials_file_path }}
-          packageName:              app.jamulus.jamulus
+          packageName:              app.jamulus.jamulus.pljones_test
           releaseFiles:             ${{ steps.select-bundle.outputs.release_file }}
           releaseName:              ${{ needs.create_release.outputs.build_version }}
           tracks:                   ${{ github.event.inputs.android_play_store_real_publish == 'true' && 'beta' || 'internalsharing' }}

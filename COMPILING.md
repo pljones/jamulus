@@ -195,9 +195,10 @@ Android builds are available in two independent streams:
 | `qt5` | 5.15.2 | Multi-ABI APK | 8 | r21d (21.0.6113669) | 30.0.2 | Android 11 / API 30 | API 21-31 |
 | `qt6` | 6.10.2 | One APK per ABI, ZIPped | 17 | r27d (27.3.13750724) | 36.0.0 | Android 16 / API 36 |
 
-As of Jamulus 4.0.0, the Android package ID is `app.jamulus.jamulus`.
-Prior installation using the former `com.github.jamulussoftware.jamulus` ID will not be upgraded in-place.
-(Users must uninstall the former package before installing the new one, losing their settings).
+Android builds from this branch use the package ID
+`app.jamulus.jamulus.pljones_test` for the personal Google Play test app.
+This differs from the team's `app.jamulus.jamulus` package ID and will install
+as a separate app.
 
 The compile/target SDK is the SDK level used to build and target the app, not
 the full Android compatibility range supported by Qt:
